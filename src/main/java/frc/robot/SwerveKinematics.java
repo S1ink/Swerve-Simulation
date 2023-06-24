@@ -1,6 +1,8 @@
 package frc.robot;
 
 import edu.wpi.first.math.geometry.*;
+import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
+import edu.wpi.first.math.kinematics.SwerveModuleState;
 
 
 public final class SwerveKinematics {
@@ -11,6 +13,14 @@ public final class SwerveKinematics {
 		WHEEL_TREAD_WIDTH = 0.038100,
 		WHEEL_DIAMETER = 0.09652;
 
+	public static final Translation2d[]
+		WHEEL_CORNER_LOCATIONS_2D = new Translation2d[]{
+			new Translation2d(WHEEL_TO_CENTER_ORTHOGANAL, -WHEEL_TO_CENTER_ORTHOGANAL),
+			new Translation2d(-WHEEL_TO_CENTER_ORTHOGANAL, -WHEEL_TO_CENTER_ORTHOGANAL),
+			new Translation2d(-WHEEL_TO_CENTER_ORTHOGANAL, WHEEL_TO_CENTER_ORTHOGANAL),
+			new Translation2d(WHEEL_TO_CENTER_ORTHOGANAL, WHEEL_TO_CENTER_ORTHOGANAL)
+		};
+
 	public static final Translation3d[]
 		WHEEL_CORNER_LOCATIONS = new Translation3d[]{
 			new Translation3d(WHEEL_TO_CENTER_ORTHOGANAL, -WHEEL_TO_CENTER_ORTHOGANAL, 0),
@@ -18,6 +28,8 @@ public final class SwerveKinematics {
 			new Translation3d(-WHEEL_TO_CENTER_ORTHOGANAL, WHEEL_TO_CENTER_ORTHOGANAL, 0),
 			new Translation3d(WHEEL_TO_CENTER_ORTHOGANAL, WHEEL_TO_CENTER_ORTHOGANAL, 0)
 		};
+
+	public static final SwerveDriveKinematics KINEMATICS = new SwerveDriveKinematics(WHEEL_CORNER_LOCATIONS_2D);
 
 	public static enum CornerIdx {
 		FRONT_LEFT		(3),
@@ -32,16 +44,15 @@ public final class SwerveKinematics {
 
 	// public static final Translation3d front_left = WHEEL_CORNER_LOCATIONS[CornerIdx.FRONT_LEFT.value]; --> example usage of enum
 
-	public static Pose3d[] getWheelPoses3d(Pose2d robot, Rotation2d[] wheel_rotations) {
+	public static Pose3d[] getWheelPoses3d(Pose2d robot, SwerveModuleState[] wheel_states) {
 		final Pose3d[] poses = new Pose3d[4];
-		final Pose3d center = new Pose3d(robot);
 		// check parameters
 
 		for(int i = 0; i < 4; i++) {
-			Translation3d rotated = WHEEL_CORNER_LOCATIONS[i].rotateBy(center.getRotation());
-			poses[i] = new Pose3d(rotated,
-				new Rotation3d(0.0, 0.0,
-					wheel_rotations[i].getRadians() + robot.getRotation().getRadians()));
+			poses[i] = new Pose3d(
+				WHEEL_CORNER_LOCATIONS[i],
+				new Rotation3d(0.0, 0.0, wheel_states[i].angle.getRadians())
+			);
 		}
 
 		return poses;

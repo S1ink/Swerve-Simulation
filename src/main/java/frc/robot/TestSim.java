@@ -1,8 +1,11 @@
 package frc.robot;
 
+import java.util.Arrays;
 import java.util.function.DoubleSupplier;
 
 import edu.wpi.first.math.geometry.*;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.util.sendable.SendableBuilder;
 import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj.Timer;
@@ -13,21 +16,22 @@ public class TestSim extends CommandBase {
 	private final DoubleSupplier x_speed, y_speed, turn_speed;	// in meters per second and degrees per second
 	private Pose2d robot_pose2d = new Pose2d();
 	private Timer timer = new Timer();
-	private Rotation2d[] wheel_rotations = new Rotation2d[4];
+	private SwerveModuleState[] wheel_states = new SwerveModuleState[4];
+	// private Rotation2d[] wheel_rotations = new Rotation2d[4];
 
 	public TestSim(DoubleSupplier xspeed, DoubleSupplier yspeed, DoubleSupplier trnspeed)
 	{
 		this.x_speed = xspeed;
 		this.y_speed = yspeed;
 		this.turn_speed = trnspeed;
-		for(int i = 0; i < wheel_rotations.length; i++) {
-			wheel_rotations[i] = new Rotation2d();
-		}
+
+		Arrays.fill(this.wheel_states, new SwerveModuleState());
 	}
 
 	@Override
 	public void initialize() {
 		this.timer.reset();
+		this.timer.start();
 	}
 
 	@Override
@@ -35,12 +39,21 @@ public class TestSim extends CommandBase {
 
 		final double dt = this.timer.get();
 		this.timer.reset();
+		this.timer.start();
 
-		double dx = x_speed.getAsDouble() * dt;
-		double dy = y_speed.getAsDouble() * dt;
-		double dθ = turn_speed.getAsDouble() * dt;
+		double
+			vx = x_speed.getAsDouble(),
+			vy = y_speed.getAsDouble(),
+			vtheta = turn_speed.getAsDouble();
 
-		this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(dx, dy, dθ));
+		ChassisSpeeds robot_speed = new ChassisSpeeds(vx, vy, vtheta);
+		this.wheel_states = SwerveKinematics.KINEMATICS.toSwerveModuleStates(robot_speed);
+
+		this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(
+			robot_speed.vxMetersPerSecond * dt,
+			robot_speed.vyMetersPerSecond * dt,
+			robot_speed.omegaRadiansPerSecond * dt
+		));
 
 	}
 
@@ -56,7 +69,7 @@ public class TestSim extends CommandBase {
 
 	private double[] getWheelPoseData() {
 		return SwerveKinematics.toComponentData(SwerveKinematics.getWheelPoses3d(
-			this.robot_pose2d, wheel_rotations
+			this.robot_pose2d, wheel_states
 		));
 	}
 
@@ -71,4 +84,3 @@ public class TestSim extends CommandBase {
 	}
 
 }
- 
