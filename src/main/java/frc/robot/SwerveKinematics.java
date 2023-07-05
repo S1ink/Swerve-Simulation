@@ -1,8 +1,9 @@
 package frc.robot;
 
+import java.util.function.Function;
+
 import edu.wpi.first.math.geometry.*;
-import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
-import edu.wpi.first.math.kinematics.SwerveModuleState;
+import edu.wpi.first.math.kinematics.*;
 
 
 public final class SwerveKinematics {
@@ -72,6 +73,67 @@ public final class SwerveKinematics {
 			values[offset + 6] = q.getZ();
 		}
 		return values;
+	}
+
+
+
+
+	public static class SwerveVisualization {
+
+		public final Translation3d[] MODULE_LOCATIONS_3D;	// within the robot coord system
+
+		public SwerveVisualization(Translation3d... locations) { this.MODULE_LOCATIONS_3D = locations; }
+		public SwerveVisualization(Translation2d... locations) { this(0, locations); }
+		public SwerveVisualization(double z, Translation2d... locations) {
+			this.MODULE_LOCATIONS_3D = new Translation3d[locations.length];
+			int i = 0;
+			for(Translation2d t : locations) {
+				this.MODULE_LOCATIONS_3D[i] = new Translation3d(t.getX(), t.getY(), z);
+				i++;
+			}
+		}
+
+
+		public <T> Pose3d[] getWheelPoses3d(Function<T, Rotation2d> extractor_f, T... states) {
+			final Pose3d[] poses = new Pose3d[states.length];
+			for(int i = 0; (i < states.length && i < MODULE_LOCATIONS_3D.length); i++) {
+				poses[i] = new Pose3d(
+					MODULE_LOCATIONS_3D[i],
+					new Rotation3d(0, 0, extractor_f.apply(states[i]).getRadians())
+				);
+			}
+			return poses;
+		}
+		public Pose3d[] getWheelPoses3d(SwerveModuleState... states) {
+			return this.getWheelPoses3d(
+				(SwerveModuleState s)->{ return s.angle; },
+				states
+			);
+		}
+		public Pose3d[] getWheelPoses3d(SwerveModulePosition... states) {
+			return this.getWheelPoses3d(
+				(SwerveModulePosition s)->{ return s.angle; },
+				states
+			);
+		}
+		public Pose3d[] getWheelPoses3d(Rotation2d... states) {
+			return this.getWheelPoses3d(
+				(Rotation2d a)->{ return a; },
+				states
+			);
+		}
+
+
+		/* For the 'Swerve' AdvantageScope tab -- 2d vector representation */
+		public static double[] getComponents2d(SwerveModuleState... states) {
+			final double[] data = new double[states.length * 2];
+			for(int i = 0; i < states.length; i++) {
+				data[i * 2 + 0] = states[i].angle.getRadians();
+				data[i * 2 + 1] = states[i].speedMetersPerSecond;
+			}
+			return data;
+		}
+
 	}
 
 

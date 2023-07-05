@@ -12,7 +12,7 @@ import frc.robot.team3407.drive.Types.*;
 
 public final class SwerveModules {
 
-	public static class FalconCoaxModule implements SwerveModule {
+	public static class FalconMK4i extends SwerveModule {
 
 		public static class ModuleConfig {
 			
@@ -26,6 +26,11 @@ public final class SwerveModules {
 
 			public final double
 				WHEEL_RADIUS,
+				STEER_GEARING,
+				DRIVE_GEARING,
+				STEER_GEARTRAIN_RI,
+				DRIVE_GEARTRAIN_RI,
+
 				MAX_VOLTAGE_OUTPUT,
 				MAX_STEER_VELOCITY,
 				MAX_DRIVE_VELOCITY,
@@ -47,7 +52,10 @@ public final class SwerveModules {
 				NeutralMode driving_neutral_mode,
 				TalonFXInvertType steering_inversion,
 				TalonFXInvertType driving_inversion,
-				double wheel_radius, double max_volrage_output,
+				double wheel_radius,
+				double steer_gearing, double drive_gearing,
+				double steer_ri, double drive_ri,
+				double max_volrage_output,
 				double max_steer_velocity, double max_drive_velocity,
 				double max_steer_acceleration, double max_drive_acceleration,
 				double steer_kp, double steer_ki, double steer_kd,
@@ -58,6 +66,10 @@ public final class SwerveModules {
 				this.STEERING_INVERSION = steering_inversion;
 				this.DRIVING_INVERSION = driving_inversion;
 				this.WHEEL_RADIUS = wheel_radius;
+				this.STEER_GEARING = steer_gearing;
+				this.DRIVE_GEARING = drive_gearing;
+				this.STEER_GEARTRAIN_RI = steer_ri;
+				this.DRIVE_GEARTRAIN_RI = drive_ri;
 				this.MAX_VOLTAGE_OUTPUT = max_volrage_output;
 				this.MAX_STEER_VELOCITY = max_steer_velocity;
 				this.MAX_DRIVE_VELOCITY = max_drive_velocity;
@@ -85,26 +97,28 @@ public final class SwerveModules {
 			steer_encoder;
 		public final ModuleConfig
 			configs;
-		public final Translation2d
-			module_location;
 
 		/** 'A' motor should be the steering motor, 'B' motor should be the drive motor */
-		public FalconCoaxModule(SwerveModuleMap<WPI_TalonFX> module_map, int cancoder_id, ModuleConfig config, Translation2d mod_location) {
+		public FalconMK4i(SwerveModuleMap<WPI_TalonFX> module_map, CANCoder steer_enc, ModuleConfig config, Translation2d mod_location) {
+			super(mod_location);
 			this.steer_motor = module_map.A;
 			this.drive_motor = module_map.B;
-			this.steer_encoder = new CANCoder(cancoder_id);
+			this.steer_encoder = steer_enc;
 			this.configs = config;
-			this.module_location = mod_location;
 
 			this.steer_motor.configFactoryDefault();
 			this.drive_motor.configFactoryDefault();
 
-			this.steer_motor.setNeutralMode(NeutralMode.Brake);
-			this.drive_motor.setNeutralMode(NeutralMode.Brake);
-			this.steer_motor.setInverted(TalonFXInvertType.CounterClockwise);
-			this.drive_motor.setInverted(TalonFXInvertType.CounterClockwise);
+			this.steer_motor.setNeutralMode(config.STEERING_NEUTRAL_MODE);
+			this.drive_motor.setNeutralMode(config.DRIVING_NEUTRAL_MODE);
+			this.steer_motor.setInverted(config.STEERING_INVERSION);
+			this.drive_motor.setInverted(config.DRIVING_INVERSION);
 
-			this.steer_motor.configSelectedFeedbackSensor(FeedbackDevice.IntegratedSensor);
+			this.steer_encoder.setPositionToAbsolute();
+			// this.steer_encoder.configFeedbackCoefficient();
+			this.steer_encoder.configSensorInitializationStrategy(SensorInitializationStrategy.BootToAbsolutePosition);
+			this.steer_motor.configRemoteFeedbackFilter(this.steer_encoder, 0);
+			this.steer_motor.configSelectedFeedbackSensor(FeedbackDevice.RemoteSensor0);
 			this.drive_motor.configSelectedFeedbackSensor(FeedbackDevice.IntegratedSensor);
 			this.steer_motor.setSelectedSensorPosition(0.0);
 			this.drive_motor.setSelectedSensorPosition(0.0);
@@ -120,9 +134,19 @@ public final class SwerveModules {
 
 
 
-		public void setState(double angle, double velocity) {
-			this.steer_motor.set(ControlMode.Position, angle);
-			this.drive_motor.set(ControlMode.Velocity, velocity);
+		@Override
+		public void setState(double linear_vel, double steer_angle_rad) {
+			this.steer_motor.set(ControlMode.Position, steer_angle_rad);	// transform to correct units
+			this.drive_motor.set(ControlMode.Velocity, linear_vel);			// transform from linear to angular
+		}
+
+		@Override
+		public double getSteeringAngle() {
+			return this.steer_encoder.getAbsolutePosition();	// need to convert
+		}
+		@Override
+		public double getWheelDisplacement() {
+			return this.drive_motor.getSelectedSensorPosition();	// need to convert
 		}
 
 	}
