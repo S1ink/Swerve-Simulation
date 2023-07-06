@@ -35,6 +35,9 @@ public class SwerveSimulation {
 		public double from(Matrix<NX, N1> x, int module) {
 			return x.get(module * 4 + this.idx, 0);
 		}
+		public void set(Matrix<NX, N1> x_, int module, double val) {
+			x_.set(module * 4 + this.idx, 0, val);
+		}
 	}
 
 	private final SwerveModule[] modules;
@@ -86,11 +89,36 @@ public class SwerveSimulation {
 		this.updateInternal();
 	}
 
+
+	protected final double
+		STEER_GEARTRAIN_FRICTION_TQ = 1.0,
+		STEER_FLOOR_FRICTION_TQ = 10.0;		// coeff of friction * f_norm (robot mass * fg) -- integrated about the wheel contact patch (radius at each point) --> multiply by 2/3*r
+
+	protected double applyFriction(double src_d2x, double src_dx, double f_d2x, double dt) {
+		final double vdir = Math.signum(src_dx);	// apply epsilon --> 0.0
+		if(vdir != 0.0) {	// friction opposes the movement
+			return src_d2x - Math.min(Math.abs(f_d2x), Math.abs(src_dx / dt)) * vdir;	// make sure that the applied friction cannot reverse the direction based on dt
+		} else {	// sum the source forces and friction (applied in opposition)
+			return src_d2x - Math.min(Math.abs(f_d2x), Math.abs(src_d2x)) * Math.signum(src_d2x);
+		}
+	}
 	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u) {
 
 		Matrix<NX, N1> x_prime = new Matrix<>(x.getStorage().createLike());
 
-		// compute derivatives here
+		for(int i = 0; i < this.SIZE; i++) {
+			final double
+				a_volts = u.get(i * 2, 0),
+				b_volts = u.get(i * 2 + 1, 0),
+				s_omega = State.SteerRate.from(x, i),
+				d_omega = State.DriveVelocity.from(x, i),
+				s_torque = this.modules[i].getSteeringTorque(a_volts, b_volts, s_omega, d_omega),
+				s_RI = this.modules[i].getSteeringRI(),
+				max_frict = STEER_GEARTRAIN_FRICTION_TQ + STEER_FLOOR_FRICTION_TQ,
+				steer_aa = applyFriction(s_torque / s_RI, s_omega, max_frict / s_RI, 0.0);
+			State.SteerAngle.set(x_prime, i, s_omega);
+			State.SteerRate.set(x_prime, i, steer_aa);
+		}
 
 		return x_prime;
 
