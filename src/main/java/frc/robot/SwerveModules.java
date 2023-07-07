@@ -1,6 +1,7 @@
 package frc.robot;
 
 import edu.wpi.first.math.geometry.*;
+import edu.wpi.first.math.system.plant.DCMotor;
 
 import com.ctre.phoenix.sensors.*;
 import com.ctre.phoenix.motorcontrol.*;
@@ -84,6 +85,13 @@ public final class SwerveModules {
 
 			}
 
+			public DCMotor getSteeringMotorProperties() {
+				return DCMotor.getFalcon500(1).withReduction(this.STEER_GEARING);
+			}
+			public DCMotor getDrivingMotorProperties() {
+				return DCMotor.getFalcon500(1).withReduction(this.DRIVE_GEARING);
+			}
+
 
 		}
 
@@ -97,6 +105,9 @@ public final class SwerveModules {
 			steer_encoder;
 		public final ModuleConfig
 			configs;
+		public final DCMotor
+			steer_motor_props,
+			drive_motor_props;
 
 		/** 'A' motor should be the steering motor, 'B' motor should be the drive motor */
 		public FalconMK4i(SwerveModuleMap<WPI_TalonFX> module_map, CANCoder steer_enc, ModuleConfig config, Translation2d mod_location) {
@@ -105,6 +116,8 @@ public final class SwerveModules {
 			this.drive_motor = module_map.B;
 			this.steer_encoder = steer_enc;
 			this.configs = config;
+			this.steer_motor_props = this.configs.getSteeringMotorProperties();
+			this.drive_motor_props = this.configs.getDrivingMotorProperties();
 
 			this.steer_motor.configFactoryDefault();
 			this.drive_motor.configFactoryDefault();
@@ -148,6 +161,29 @@ public final class SwerveModules {
 		public double getWheelDisplacement() {
 			return this.drive_motor.getSelectedSensorPosition();	// need to convert
 		}
+
+
+		@Override
+		public double getMotorAVolts() { return this.steer_motor.getBusVoltage(); }
+		@Override
+		public double getMotorBVolts() { return this.drive_motor.getBusVoltage(); }
+
+		@Override
+		public double getSteeringTorque(double a_volts, double b_volts, double a_omega, double b_omega) {
+			return this.steer_motor_props.getTorque(
+				this.steer_motor_props.getCurrent(a_omega, a_volts));
+		}
+		@Override
+		public double getDrivingTorque(double a_volts, double b_volts, double a_omega, double b_omega) {
+			return this.drive_motor_props.getTorque(
+				this.drive_motor_props.getCurrent(b_omega, b_volts));
+		}
+
+		@Override
+		public double getSteeringRI() { return this.configs.STEER_GEARTRAIN_RI; }
+		@Override
+		public double getDrivingRI() { return this.configs.DRIVE_GEARTRAIN_RI; }
+
 
 	}
 
