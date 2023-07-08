@@ -1,4 +1,4 @@
-package frc.robot;
+package frc.robot.swerve;
 
 import edu.wpi.first.util.sendable.*;
 import edu.wpi.first.wpilibj.interfaces.Gyro;
@@ -7,8 +7,7 @@ import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
 import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.math.trajectory.constraint.SwerveDriveKinematicsConstraint;
-
-import frc.robot.SwerveKinematics.SwerveVisualization;
+import frc.robot.swerve.SwerveUtils.*;
 import frc.robot.team3407.Util;
 import frc.robot.team3407.drive.Types.*;
 
@@ -23,9 +22,21 @@ public class SwerveDrive implements Subsystem, Sendable {
 		protected SwerveModule(Translation2d loc) { this.module_location = loc; }
 
 		/** Set the desired state of the module. */
-		public void setState(SwerveModuleState state) { this.setState(state.speedMetersPerSecond, state.angle.getRadians()); }
-		/** Set the desired state of the module. Velocity is linear. */
-		abstract public void setState(double linear_vel, double steer_angle_rad);
+		public void setState(SwerveModuleState state)
+			{ this.setState(state.speedMetersPerSecond, state.angle.getRadians()); }
+		// /** Set the desired second order state of the module. */
+		// public void setState(SwerveModuleVector state)
+		// 	{ this.setState(state.speedMetersPerSecond, state.angle.getRadians(), state.linearAcc, state.omega); }
+		/** Set the desired state of the module. Wheel velocity is linear. */
+		public void setState(double linear_vel, double steer_angle_rad)
+			{ this.setState(linear_vel, steer_angle_rad, 0.0, 0.0); }
+		/** Set the desired second order state of the module. Wheel velocity and accelerations are linear. */
+		abstract public void setState(
+			double linear_vel,
+			double steer_angle_rad,
+			double linear_acc,
+			double steer_angular_vel
+		);
 
 		/** Get the steering angle in radians. The coord system begins pointing forward (robot front) and is CCW+ (unit circle) */
 		abstract public double getSteeringAngle();
@@ -93,11 +104,7 @@ public class SwerveDrive implements Subsystem, Sendable {
 
 	}
 
-	public static class SwerveConfig {	// put all base config options here, extend externally with additional implementation-specific options
-
-
-
-	}
+	public static class SwerveConfig {}	// put all base config options here, extend externally with additional implementation-specific options
 
 
 

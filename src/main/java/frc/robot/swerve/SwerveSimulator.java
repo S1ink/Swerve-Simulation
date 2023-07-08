@@ -1,4 +1,4 @@
-package frc.robot;
+package frc.robot.swerve;
 
 import org.ejml.simple.SimpleMatrix;
 
@@ -8,12 +8,11 @@ import edu.wpi.first.math.numbers.*;
 import edu.wpi.first.math.system.NumericalIntegration;
 import edu.wpi.first.util.sendable.Sendable;
 import edu.wpi.first.util.sendable.SendableBuilder;
+import frc.robot.swerve.SwerveDrive.*;
+import frc.robot.swerve.SwerveUtils.*;
 
-import frc.robot.SwerveDrive.*;
-import frc.robot.SwerveKinematics.SwerveVisualization;
 
-
-public class SwerveSimulation implements Sendable {
+public class SwerveSimulator implements Sendable {
 
 	private static final class NX extends Num implements Nat<NX> {
 
@@ -70,10 +69,10 @@ public class SwerveSimulation implements Sendable {
 
 
 
-	public SwerveSimulation(SwerveModule... modules) {
+	public SwerveSimulator(SwerveModule... modules) {
 		this(new SwerveVisualization(getTranslations(modules)), modules);
 	}
-	public SwerveSimulation(SwerveVisualization viz, SwerveModule... modules) {
+	public SwerveSimulator(SwerveVisualization viz, SwerveModule... modules) {
 		this.modules = modules;
 		this.visualization = viz;
 		this.SIZE = modules.length;
