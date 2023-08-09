@@ -7,11 +7,15 @@ import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
 import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.math.trajectory.constraint.SwerveDriveKinematicsConstraint;
+
 import frc.robot.swerve.SwerveUtils.*;
 import frc.robot.team3407.Util;
 import frc.robot.team3407.drive.Types.*;
 
 
+/** A high-level swerve drive container that allows driving and simulation of any possible {@link SwerveModule} implementation,
+ * and allows for any number of modules and physical layouts. */
+// make this a generic for the SwerveModule implemented type so specific external function calls can be made on the modules
 public class SwerveDrive implements Subsystem, Sendable {
 
 	/** Base interface for all swerve modules such that they can be 
@@ -24,9 +28,9 @@ public class SwerveDrive implements Subsystem, Sendable {
 		/** Set the desired state of the module. */
 		public void setState(SwerveModuleState state)
 			{ this.setState(state.speedMetersPerSecond, state.angle.getRadians()); }
-		// /** Set the desired second order state of the module. */
-		// public void setState(SwerveModuleVector state)
-		// 	{ this.setState(state.speedMetersPerSecond, state.angle.getRadians(), state.linearAcc, state.omega); }
+		/** Set the desired second order state of the module. */
+		public void setState(SwerveModuleStates state)
+			{ this.setState(state.linear_velocity, state.angle.getRadians(), state.linear_acceleration, state.angular_velocity); }
 		/** Set the desired state of the module. Wheel velocity is linear. */
 		public void setState(double linear_vel, double steer_angle_rad)
 			{ this.setState(linear_vel, steer_angle_rad, 0.0, 0.0); }
@@ -42,18 +46,19 @@ public class SwerveDrive implements Subsystem, Sendable {
 		abstract public double getSteeringAngle();
 		/** Get the wheel's linear displacement in meters (takes into account the radius of the wheel). Positive values represent forward displacement. */
 		abstract public double getWheelDisplacement();	// << LINEAR NOT ANGULAR
-		/** Get the module's position as a SwerveModulePosition object. */
-		public SwerveModulePosition getPosition() {
-			return new SwerveModulePosition(this.getWheelDisplacement(), Rotation2d.fromRadians(this.getSteeringAngle()));
-		}
-
 		/** Get the steering angular velocity in radians per second */
 		public double getSteeringRate() { return 0.0; }
 		/** Get the wheel's linear velocity in meters per second */
 		public double getWheelVelocity() { return 0.0; }	// << LINEAR NOT ANGULAR
-		/** Get the module's state as a SwerveModuleState object. */
-		public SwerveModuleState getState() {
-			return new SwerveModuleState(this.getWheelVelocity(), Rotation2d.fromRadians(this.getSteeringAngle()));
+		/** Get all combined states. */
+		public SwerveModuleStates getStates() {
+			return new SwerveModuleStates(
+				this.getSteeringAngle(),
+				this.getWheelDisplacement(),
+				this.getWheelVelocity(),
+				this.getSteeringRate(),
+				0.0
+			);
 		}
 
 		/** Periodic code for updating the module's internal states. 'dt' is the time in seconds since the last call. */
@@ -118,55 +123,52 @@ public class SwerveDrive implements Subsystem, Sendable {
 	private final SwerveModule[] modules;
 	private final Gyro gyro;
 
-	private final SwerveDriveKinematics kinematics;
-	private final SwerveDriveOdometry odometry;
+	private final SwerveKinematics kinematics;
+	private final SwerveOdometry odometry;
 	private final SwerveVisualization visualization;
 
 	public final int SIZE;
 
-	private SwerveModulePosition[] positions;
-	private SwerveModuleState[] states;
+	private SwerveModuleStates[] states;
 
 	public SwerveDrive(Gyro gyro, SwerveModule... modules) {
 		this.modules = modules;
 		this.gyro = gyro;
 		this.SIZE = modules.length;
-		this.positions = new SwerveModulePosition[this.SIZE];
-		this.states = new SwerveModuleState[this.SIZE];
+		this.states = new SwerveModuleStates[this.SIZE];
 
 		final Translation2d[] locations = new Translation2d[this.SIZE];
 		for(int i = 0; i < this.SIZE; i++) {
 			locations[i] = this.modules[i].module_location;
-			this.positions[i] = this.modules[i].getPosition();
-			this.states[i] = this.modules[i].getState();
+			this.states[i] = this.modules[i].getStates();
 		}
-		this.kinematics = new SwerveDriveKinematics(locations);
-		this.odometry = new SwerveDriveOdometry(this.kinematics, this.gyro.getRotation2d(), this.positions);
+		this.kinematics = new SwerveKinematics(locations);
+		this.odometry = null;
+		// this.odometry = new SwerveDriveOdometry(this.kinematics, this.gyro.getRotation2d(), this.positions);		// update with new odometry
 		this.visualization = new SwerveVisualization(locations);
 	}
 
 
 	protected void updateCachedStates() {
 		for(int i = 0; i < this.SIZE; i++) {
-			this.positions[i] = this.modules[i].getPosition();
-			this.states[i] = this.modules[i].getState();
+			this.states[i] = this.modules[i].getStates();
 		}
 	}
 
 	@Override
 	public void periodic() {
 		this.updateCachedStates();
-		this.odometry.update(
-			this.gyro.getRotation2d(),
-			this.positions
-		);
+		// this.odometry.update(
+		// 	this.gyro.getRotation2d(),
+		// 	this.positions
+		// );
 	}
 
 	@Override
 	public void initSendable(SendableBuilder b) {
-		b.addDoubleArrayProperty("Odometry", ()->Util.toComponents2d(this.odometry.getPoseMeters()), null);
-		b.addDoubleArrayProperty("Module Poses 3d", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.positions)), null);
-		b.addDoubleArrayProperty("Wheel Vectors 2d", ()->SwerveVisualization.getComponents2d(this.states), null);
+		// b.addDoubleArrayProperty("Odometry", ()->Util.toComponents2d(this.odometry.getPoseMeters()), null);
+		b.addDoubleArrayProperty("Module Poses 3d", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.states)), null);
+		b.addDoubleArrayProperty("Wheel Vectors 2d", ()->SwerveVisualization.getVecComponents2d(this.states), null);
 	}
 
 }

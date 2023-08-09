@@ -8,6 +8,7 @@ import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
 
 
+/** Add comments to this class! */
 public final class SwerveUtils {
 
 	public static class ChassisStates {
@@ -59,6 +60,17 @@ public final class SwerveUtils {
 			);
 		}
 
+		public static ChassisStates accFromDelta(ChassisStates from, ChassisStates to, double dt, ChassisStates buff) {
+			if(buff == null) { buff = new ChassisStates(); }
+			buff.x_velocity = to.x_velocity;
+			buff.y_velocity = to.y_velocity;
+			buff.angular_velocity = to.angular_velocity;
+			buff.x_acceleration = (to.x_velocity - from.x_velocity) / dt;
+			buff.y_acceleration = (to.y_velocity - from.y_velocity) / dt;
+			buff.angular_acceleration = (to.angular_velocity - from.angular_acceleration) / dt;
+			return buff;
+		}
+
 	}
 
 
@@ -68,29 +80,69 @@ public final class SwerveUtils {
 		public Rotation2d
 			angle;
 		public double
+			linear_displacement,
 			linear_velocity,
 			angular_velocity,
 			linear_acceleration;
 
-		public SwerveModuleStates() { this.angle = new Rotation2d(); }
-		public SwerveModuleStates(Rotation2d angle, double linear_vel, double angular_vel, double linear_acc) {
+		public SwerveModuleStates()
+			{ this.angle = new Rotation2d(); }
+		public SwerveModuleStates(double angle_rad, double linear_pos, double linear_vel, double angular_vel, double linear_acc)
+			{ this(Rotation2d.fromRadians(angle_rad), linear_pos, linear_vel, angular_vel, linear_acc); }
+		public SwerveModuleStates(Rotation2d angle, double linear_pos, double linear_vel, double angular_vel, double linear_acc) {
 			this.angle = angle;
+			this.linear_displacement = linear_pos;
 			this.linear_velocity = linear_vel;
 			this.angular_velocity = angular_vel;
 			this.linear_acceleration = linear_acc;
 		}
 
+		public static SwerveModuleStates makePosition(double angle_rad, double linear_pos) {
+			return makePosition(Rotation2d.fromRadians(angle_rad), linear_pos);
+		}
+		public static SwerveModuleStates makePosition(Rotation2d angle, double linear_pos) {
+			return new SwerveModuleStates(angle, linear_pos, 0.0, 0.0, 0.0);
+		}
+		public static SwerveModuleStates makeVelocity(double angle_rad, double linear_vel) {
+			return makeVelocity(Rotation2d.fromRadians(angle_rad), linear_vel);
+		}
+		public static SwerveModuleStates makeVelocity(Rotation2d angle, double linear_vel) {
+			return new SwerveModuleStates(angle, 0.0, linear_vel, 0.0, 0.0);
+		}
+		public static SwerveModuleStates makeSecondOrder(double angle_rad, double linear_vel, double angular_vel, double linear_acc) {
+			return makeSecondOrder(Rotation2d.fromRadians(angle_rad), linear_vel, angular_vel, linear_acc);
+		}
+		public static SwerveModuleStates makeSecondOrder(Rotation2d angle, double linear_vel, double angular_vel, double linear_acc) {
+			return new SwerveModuleStates(angle, 0.0, linear_vel, angular_vel, linear_vel);
+		}
+		public static SwerveModuleStates makeFrom(SwerveModuleState state) {
+			return new SwerveModuleStates(state.angle, 0.0, state.speedMetersPerSecond, 0.0, 0.0);
+		}
+		public static SwerveModuleStates makeFrom(SwerveModulePosition position) {
+			return new SwerveModuleStates(position.angle, position.distanceMeters, 0.0, 0.0, 0.0);
+		}
+
+		public SwerveModulePosition toPosition() {
+			return new SwerveModulePosition(this.linear_displacement, this.angle);
+		}
+		public SwerveModuleState toVelocityState() {
+			return new SwerveModuleState(this.linear_velocity, this.angle);
+		}
+
+		// >> utilities for converting/acting on arrays of states <<
+
+
 		public static SwerveModuleStates optimize(SwerveModuleStates desired_states, Rotation2d currentAngle) {
 			var delta = desired_states.angle.minus(currentAngle);
 			if (Math.abs(delta.getDegrees()) > 90.0) {
-				return new SwerveModuleStates(
+				return SwerveModuleStates.makeSecondOrder(
 					desired_states.angle.rotateBy(Rotation2d.fromDegrees(180.0)),
 					-desired_states.linear_velocity,
 					desired_states.angular_velocity,
 					desired_states.linear_acceleration
 				);
 			} else {
-				return new SwerveModuleStates(
+				return SwerveModuleStates.makeSecondOrder(
 					desired_states.angle,
 					desired_states.linear_velocity,
 					desired_states.angular_velocity,
@@ -103,62 +155,6 @@ public final class SwerveUtils {
 
 
 
-	public static class SwerveDriveKinematics2 extends SwerveDriveKinematics {
-
-		private final SimpleMatrix inv_kinematics, fwd_kinematics;
-		private final Translation2d[] locations;
-		private final int SIZE;
-
-		public SwerveDriveKinematics2(Translation2d... module_locations) {
-			super(module_locations);
-			this.locations = module_locations;
-			this.SIZE = module_locations.length;
-			this.inv_kinematics = new SimpleMatrix(this.SIZE * 2, 4);
-			for(int i = 0; i < this.SIZE; i++) {
-				final double x = this.locations[i].getX(), y = this.locations[i].getY();
-				this.inv_kinematics.setRow(i * 2 + 0, 0, 1, 0, -x, -y);
-				this.inv_kinematics.setRow(i * 2 + 1, 0, 0, 1, -y, +x);
-			}
-			this.fwd_kinematics = this.inv_kinematics.pseudoInverse();
-		}
-
-
-		public SwerveModuleVector[] toModuleVectors(ChassisVectors state) {
-
-			final SwerveModuleState[] first_order = super.toSwerveModuleStates(state);
-			final SimpleMatrix
-				acc_vec = new SimpleMatrix(4, 1),
-				transform_mat = new SimpleMatrix(this.SIZE * 2, 2);
-
-			acc_vec.setColumn(0, 0,
-				state.axMetersPerSec2,
-				state.ayMetersPerSec2,
-				state.omegaRadiansPerSecond * state.omegaRadiansPerSecond,
-				state.alphaRadPerSec2);
-
-			for(int i = 0; i < this.SIZE; i++) {
-				final double sin = first_order[i].angle.getSin(), cos = first_order[i].angle.getCos();
-				transform_mat.setRow(i * 2 + 0, 0, +cos, +sin);
-				transform_mat.setRow(i * 2 + 1, 0, -sin, +cos);
-			}
-
-			final SimpleMatrix second_order = this.inv_kinematics.mult(acc_vec).mult(transform_mat);
-
-			final SwerveModuleVector[] modules = new SwerveModuleVector[this.SIZE];
-			for(int i = 0; i < this.SIZE; i++) {
-				modules[i] = new SwerveModuleVector(
-					first_order[i],
-					second_order.get(i * 2 + 0, 0),
-					second_order.get(i * 2 + 1, 0) / first_order[i].speedMetersPerSecond
-				);
-			}
-
-			return modules;
-
-		}
-
-
-	}
 
 
 
@@ -189,6 +185,12 @@ public final class SwerveUtils {
 			}
 			return poses;
 		}
+		public Pose3d[] getWheelPoses3d(SwerveModuleStates... states) {
+			return this.getWheelPoses3d(
+				(SwerveModuleStates ss)->{ return ss.angle; },
+				states
+			);
+		}
 		public Pose3d[] getWheelPoses3d(SwerveModuleState... states) {
 			return this.getWheelPoses3d(
 				(SwerveModuleState s)->{ return s.angle; },
@@ -210,7 +212,7 @@ public final class SwerveUtils {
 
 
 		/* For the 'Swerve' AdvantageScope tab -- 2d vector representation */
-		public static double[] getComponents2d(SwerveModuleState... states) {
+		public static double[] getVecComponents2d(SwerveModuleState... states) {
 			final double[] data = new double[states.length * 2];
 			for(int i = 0; i < states.length; i++) {
 				data[i * 2 + 0] = states[i].angle.getRadians();
@@ -218,7 +220,37 @@ public final class SwerveUtils {
 			}
 			return data;
 		}
+		public static double[] getVecComponents2d(SwerveModuleStates... states) {
+			final double[] data = new double[states.length * 2];
+			for(int i = 0; i < states.length; i++) {
+				data[i * 2 + 0] = states[i].angle.getRadians();
+				data[i * 2 + 1] = states[i].linear_velocity;
+			}
+			return data;
+		}
 
+	}
+
+
+
+
+	public static Translation2d[] makeSquareLocationsCW(double ortho_center_dist) {
+		final double d = ortho_center_dist;
+		return new Translation2d[]{
+			new Translation2d(+d, -d),
+			new Translation2d(-d, -d),
+			new Translation2d(-d, +d),
+			new Translation2d(+d, +d)
+		};
+	}
+	public static Translation2d[] makeRectLocationsCW(double wwidth, double wlength) {
+		final double w = wwidth, l = wlength;
+		return new Translation2d[] {
+			new Translation2d(+w, -l),
+			new Translation2d(-w, -l),
+			new Translation2d(-w, +l),
+			new Translation2d(+w, +l)
+		};
 	}
 
 

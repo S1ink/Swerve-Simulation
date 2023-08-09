@@ -4,11 +4,12 @@ import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.event.EventLoop;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 
-import frc.robot.team3407.SenderNT;
-import frc.robot.team3407.Util;
 import frc.robot.team3407.commandbased.EventTriggers.TeleopTrigger;
 import frc.robot.team3407.controls.ControlSchemeManager;
 import frc.robot.team3407.controls.Input.*;
+import frc.robot.team3407.SenderNT;
+import frc.robot.team3407.Util;
+import frc.robot.swerve.SwerveUtils;
 
 
 public class Robot extends TimedRobot {
@@ -29,7 +30,8 @@ public class Robot extends TimedRobot {
 					new TestSim(
 						Xbox.Analog.RY.getDriveInputSupplier(xbox, 0.05, -4.0, 1.0),
 						Xbox.Analog.RX.getDriveInputSupplier(xbox, 0.05, -4.0, 1.0),
-						Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -3.0, 1.0)
+						Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -3.0, 1.0),
+						SwerveUtils.makeSquareLocationsCW(0.263525)
 					),
 					this.robot_nt, "Test Sim"
 				)

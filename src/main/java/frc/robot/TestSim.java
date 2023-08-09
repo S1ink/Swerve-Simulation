@@ -4,12 +4,14 @@ import java.util.Arrays;
 import java.util.function.DoubleSupplier;
 
 import edu.wpi.first.math.geometry.*;
-import edu.wpi.first.math.kinematics.ChassisSpeeds;
-import edu.wpi.first.math.kinematics.SwerveModuleState;
+import edu.wpi.first.math.system.plant.LinearSystemId;
 import edu.wpi.first.util.sendable.SendableBuilder;
 import edu.wpi.first.wpilibj2.command.CommandBase;
-import frc.robot.swerve.SwerveKinematics;
 import edu.wpi.first.wpilibj.Timer;
+
+import frc.robot.swerve.SwerveKinematics;
+import frc.robot.swerve.SwerveUtils.*;
+import frc.robot.team3407.Util;
 
 
 public class TestSim extends CommandBase {
@@ -17,20 +19,29 @@ public class TestSim extends CommandBase {
 	private final DoubleSupplier x_speed, y_speed, turn_speed;	// in meters per second and degrees per second
 	private Pose2d robot_pose2d = new Pose2d();
 	private Timer timer = new Timer();
-	private SwerveModuleState[] wheel_states = new SwerveModuleState[4];
-	// private Rotation2d[] wheel_rotations = new Rotation2d[4];
+	private ChassisStates robot_vec = new ChassisStates();
 
-	public TestSim(DoubleSupplier xspeed, DoubleSupplier yspeed, DoubleSupplier trnspeed)
-	{
+	private SwerveKinematics kinematics;
+	private SwerveVisualization visualization;
+	private SwerveModuleStates[] wheel_states = new SwerveModuleStates[4];
+
+	public TestSim(
+		DoubleSupplier xspeed, DoubleSupplier yspeed, DoubleSupplier trnspeed,
+		Translation2d... modules
+	) {
+		this.kinematics = new SwerveKinematics(modules);
+		this.visualization = new SwerveVisualization(modules);
+
 		this.x_speed = xspeed;
 		this.y_speed = yspeed;
 		this.turn_speed = trnspeed;
 
-		Arrays.fill(this.wheel_states, new SwerveModuleState());
+		Arrays.fill(this.wheel_states, new SwerveModuleStates());
 	}
 
 	@Override
 	public void initialize() {
+		this.robot_vec = new ChassisStates();
 		this.timer.reset();
 		this.timer.start();
 	}
@@ -42,18 +53,18 @@ public class TestSim extends CommandBase {
 		this.timer.reset();
 		this.timer.start();
 
-		double
+		final double
 			vx = x_speed.getAsDouble(),
 			vy = y_speed.getAsDouble(),
 			vtheta = turn_speed.getAsDouble();
 
-		ChassisSpeeds robot_speed = new ChassisSpeeds(vx, vy, vtheta);
-		this.wheel_states = SwerveKinematics.KINEMATICS.toSwerveModuleStates(robot_speed);
+		ChassisStates.accFromDelta(this.robot_vec, new ChassisStates(vx, vy, vtheta), dt, this.robot_vec);
+		this.wheel_states = this.kinematics.toModuleStates(this.robot_vec);
 
 		this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(
-			robot_speed.vxMetersPerSecond * dt,
-			robot_speed.vyMetersPerSecond * dt,
-			robot_speed.omegaRadiansPerSecond * dt
+			this.robot_vec.x_velocity * dt,
+			this.robot_vec.y_velocity * dt,
+			this.robot_vec.angular_velocity * dt
 		));
 
 	}
@@ -68,20 +79,11 @@ public class TestSim extends CommandBase {
 		
 	}
 
-	private double[] getWheelPoseData() {
-		return SwerveKinematics.toComponentData(SwerveKinematics.getWheelPoses3d(
-			this.robot_pose2d, wheel_states
-		));
-	}
-
 	@Override
 	public void initSendable(SendableBuilder builder) {
-		builder.addDoubleArrayProperty("Wheel Poses", this::getWheelPoseData, null);
-		builder.addDoubleArrayProperty("Robot Pose", ()->new double[]{
-			this.robot_pose2d.getX(),
-			this.robot_pose2d.getY(),
-			this.robot_pose2d.getRotation().getRadians()
-		}, null);
+		builder.addDoubleArrayProperty("Robot Pose", ()->Util.toComponents2d(this.robot_pose2d), null);
+		builder.addDoubleArrayProperty("Wheel Poses", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.wheel_states)), null);
+		builder.addDoubleArrayProperty("Wheel Vectors", ()->SwerveVisualization.getVecComponents2d(this.wheel_states), null);
 	}
 
 }
