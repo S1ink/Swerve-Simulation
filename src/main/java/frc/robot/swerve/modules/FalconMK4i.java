@@ -7,7 +7,7 @@ import com.ctre.phoenix.sensors.*;
 import com.ctre.phoenix.motorcontrol.*;
 import com.ctre.phoenix.motorcontrol.can.*;
 
-import frc.robot.swerve.SwerveDrive.*;
+import frc.robot.swerve.*;
 import frc.robot.team3407.drive.Types.*;
 
 
@@ -170,20 +170,15 @@ public class FalconMK4i extends SwerveModule {
 	public double getMotorBVolts() { return this.drive_motor.getBusVoltage(); }
 
 	@Override
-	public double getSteeringTorque(double a_volts, double b_volts, double a_omega, double b_omega) {
-		return this.steer_motor_props.getTorque(
-			this.steer_motor_props.getCurrent(a_omega, a_volts));
-	}
-	@Override
-	public double getDrivingTorque(double a_volts, double b_volts, double a_omega, double b_omega) {
-		return this.drive_motor_props.getTorque(
-			this.drive_motor_props.getCurrent(b_omega, b_volts));
-	}
+	public SwerveSimulator.ModuleSim getSimProperties() { return null; }
 
-	@Override
-	public double getSteeringRI() { return this.configs.STEER_GEARTRAIN_RI; }
-	@Override
-	public double getDrivingRI() { return this.configs.DRIVE_GEARTRAIN_RI; }
+
+
+	public static class FalconMK4iSim implements SwerveSimulator.ModuleSim {
+
+		
+
+	}
 
 
 }

@@ -8,9 +8,10 @@ import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
 
 
-/** Add comments to this class! */
+/** SwerveUtils holds many utility classes used for swerve control/simulation */
 public final class SwerveUtils {
 
+	/** ChassisStates represents the robot's 1st and 2nd order movement in the robot coordinate system (by default). */
 	public static class ChassisStates {
 		
 		public double
@@ -34,6 +35,7 @@ public final class SwerveUtils {
 			this.angular_acceleration = r_a;
 		}
 
+		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
 		public static ChassisStates fromFieldRelative(
 			double x_v, double y_v, double r_v, double x_a, double y_a, double r_a,
 			Rotation2d robot_heading
@@ -48,6 +50,7 @@ public final class SwerveUtils {
 				r_a
 			);
 		}
+		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
 		public static ChassisStates fromFieldRelative(ChassisStates states, Rotation2d robot_heading) {
 			return fromFieldRelative(
 				states.x_velocity,
@@ -60,6 +63,7 @@ public final class SwerveUtils {
 			);
 		}
 
+		/** Populate the ChassisStates' second order properties using deltas between 2 of the 1st order properties and a delta time. */
 		public static ChassisStates accFromDelta(ChassisStates from, ChassisStates to, double dt, ChassisStates buff) {
 			if(buff == null) { buff = new ChassisStates(); }
 			buff.x_velocity = to.x_velocity;
@@ -75,6 +79,8 @@ public final class SwerveUtils {
 
 
 
+	/** SwerveModuleStates has a bunch of information about the module's states
+	 * (not geographical states) -- can be in robot or field coordinate system depending on the context. */
 	public static class SwerveModuleStates {
 
 		public Rotation2d
@@ -132,6 +138,7 @@ public final class SwerveUtils {
 		// >> utilities for converting/acting on arrays of states <<
 
 
+		/** Optimizes the target state in case the module is attempting to turn more than 90 degrees - in this case we can just flip the direction and turn to a less extreme angle. */
 		public static SwerveModuleStates optimize(SwerveModuleStates desired_states, Rotation2d currentAngle) {
 			var delta = desired_states.angle.minus(currentAngle);
 			if (Math.abs(delta.getDegrees()) > 90.0) {
@@ -159,6 +166,7 @@ public final class SwerveUtils {
 
 
 
+	/** Allows for easy data conversion/management for viewing a swerve model in 3D using AdvantageScope. */
 	public static class SwerveVisualization {
 
 		public final Translation3d[] MODULE_LOCATIONS_3D;	// within the robot coord system
@@ -234,6 +242,7 @@ public final class SwerveUtils {
 
 
 
+	/** Generate the module locations for a robot chassis that is perfectly square, given the orthoganl distance from a module (either x or y) to the robot's center. */
 	public static Translation2d[] makeSquareLocationsCW(double ortho_center_dist) {
 		final double d = ortho_center_dist;
 		return new Translation2d[]{
@@ -243,6 +252,7 @@ public final class SwerveUtils {
 			new Translation2d(+d, +d)
 		};
 	}
+	/** Generate the module locations for a robot chassis that is a rectangle given the module-to-center distances along the width and length of the robot's frame. */
 	public static Translation2d[] makeRectLocationsCW(double wwidth, double wlength) {
 		final double w = wwidth, l = wlength;
 		return new Translation2d[] {

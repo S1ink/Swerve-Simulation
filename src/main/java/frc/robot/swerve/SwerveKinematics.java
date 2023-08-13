@@ -111,6 +111,46 @@ public final class SwerveKinematics {
 	}
 
 
+	public ChassisStates toChassisStates(SwerveModuleStates... states) {
+
+		// might need to check length of states
+
+		final SimpleMatrix
+			module_states_order1 = new SimpleMatrix(this.SIZE * 2, 1),
+			module_states_order2 = new SimpleMatrix(this.SIZE * 2, 1);
+
+		for(int i = 0; i < this.SIZE; i++) {
+			SwerveModuleStates state = states[i];
+			final double
+				v = state.linear_velocity,
+				om = state.angular_velocity,
+				a = state.linear_acceleration,
+				sin = state.angle.getSin(),
+				cos = state.angle.getCos(),
+				a_x = (cos * a - sin * v * om),
+				a_y = (sin * a + cos * v * om);
+			module_states_order1.set(i * 2 + 0, 0, v * sin);
+			module_states_order1.set(i * 2 + 1, 0, v * cos);
+			module_states_order2.set(i * 2 + 0, 0, a_x);
+			module_states_order2.set(i * 2 + 1, 0, a_y);
+		}
+
+		final SimpleMatrix
+			chassis_states_order1 = this.fwd_kinematics.mult(module_states_order1),
+			chassis_states_order2 = this.fwd_kinematics2.mult(module_states_order2);
+			
+		return new ChassisStates(
+			chassis_states_order1.get(0, 0),
+			chassis_states_order1.get(1, 0),
+			chassis_states_order1.get(2, 0),
+			chassis_states_order2.get(0, 0),
+			chassis_states_order2.get(1, 0),
+			chassis_states_order2.get(2, 0)
+		);
+
+	}
+
+
 
 
 
