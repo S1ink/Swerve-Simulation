@@ -12,11 +12,12 @@ import frc.robot.swerve.SwerveUtils.*;
 public final class SwerveKinematics {
 
 	protected final SimpleMatrix
-		inv_kinematics, fwd_kinematics, inv_kinematics2, fwd_kinematics2;
+		inv_kinematics, fwd_kinematics,
+		inv_kinematics2, fwd_kinematics2;
 	protected final int SIZE;
 	protected final Translation2d[] module_locations;
 	protected SwerveModuleStates[] stored_states;
-	protected Translation2d previous_rotation_center;
+	protected Translation2d stored_recenter = new Translation2d();
 
 	public SwerveKinematics(Translation2d... locations) {
 
@@ -42,23 +43,23 @@ public final class SwerveKinematics {
 	}
 
 
-	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, Translation2d rotational_center) {
+	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, Translation2d recenter) {
 
 		// remember to make buffer to ensure that if the robot isn't moving, the kineamics should stay the same
 		// setting wheels to x state
 
-		if(this.previous_rotation_center.equals(rotational_center)) {
+		if(this.stored_recenter.equals(recenter)) {
 
 			for(int i = 0; i < this.SIZE; i++) {
 				final double
-					x = this.module_locations[i].getX() - rotational_center.getX(),
-					y = this.module_locations[i].getY() - rotational_center.getY();
+					x = this.module_locations[i].getX() - recenter.getX(),
+					y = this.module_locations[i].getY() - recenter.getY();
 				this.inv_kinematics.setRow(i * 2 + 0, 0, 1, 0, -y);
 				this.inv_kinematics.setRow(i * 2 + 1, 0, 0, 1, +x);
 				this.inv_kinematics2.setRow(i * 2 + 0, 0, 1, 0, -x, -y);
 				this.inv_kinematics2.setRow(i * 2 + 1, 0, 0, 1, -y, +x);
 			}
-			this.previous_rotation_center = rotational_center;
+			this.stored_recenter = recenter;
 
 		}
 
@@ -98,7 +99,7 @@ public final class SwerveKinematics {
 				a = cos * x_a + sin * y_a,
 				omega = (-sin * x_a + cos * y_a) / v;
 
-			this.stored_states[i] = new SwerveModuleStates(angle, v, omega, a);
+			this.stored_states[i] = SwerveModuleStates.makeSecondOrder(angle, v, omega, a);
 		}
 
 		return this.stored_states;
@@ -107,6 +108,80 @@ public final class SwerveKinematics {
 
 	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state) {
 		return this.toModuleStates(robot_state, new Translation2d());
+	}
+
+
+	public ChassisStates toChassisStates(SwerveModuleStates... states) {
+
+		// might need to check length of states
+
+		final SimpleMatrix
+			module_states_order1 = new SimpleMatrix(this.SIZE * 2, 1),
+			module_states_order2 = new SimpleMatrix(this.SIZE * 2, 1);
+
+		for(int i = 0; i < this.SIZE; i++) {
+			SwerveModuleStates state = states[i];
+			final double
+				v = state.linear_velocity,
+				om = state.angular_velocity,
+				a = state.linear_acceleration,
+				sin = state.angle.getSin(),
+				cos = state.angle.getCos(),
+				a_x = (cos * a - sin * v * om),
+				a_y = (sin * a + cos * v * om);
+			module_states_order1.set(i * 2 + 0, 0, v * sin);
+			module_states_order1.set(i * 2 + 1, 0, v * cos);
+			module_states_order2.set(i * 2 + 0, 0, a_x);
+			module_states_order2.set(i * 2 + 1, 0, a_y);
+		}
+
+		final SimpleMatrix
+			chassis_states_order1 = this.fwd_kinematics.mult(module_states_order1),
+			chassis_states_order2 = this.fwd_kinematics2.mult(module_states_order2);
+			
+		return new ChassisStates(
+			chassis_states_order1.get(0, 0),
+			chassis_states_order1.get(1, 0),
+			chassis_states_order1.get(2, 0),
+			chassis_states_order2.get(0, 0),
+			chassis_states_order2.get(1, 0),
+			chassis_states_order2.get(2, 0)
+		);
+
+	}
+
+
+
+
+
+	public static SimpleMatrix invKinematicsMat_D1(Translation2d... modules) {
+		return invKinematicsMat_D1(new SimpleMatrix(modules.length * 2, 3), modules);
+	}
+	public static SimpleMatrix invKinematicsMat_D1(SimpleMatrix mat, Translation2d... modules) {
+		final int LEN = modules.length;
+		if(mat.numCols() != 3 || mat.numRows() != LEN * 2) {
+			mat.reshape(LEN * 2, 3);
+		}
+		for(int i = 0; i < LEN; i++) {
+			mat.setRow(i * 2 + 0, 0, 1, 0, -modules[i].getY());
+			mat.setRow(i * 2 + 1, 0, 0, 1, +modules[i].getX());
+		}
+		return mat;
+	}
+	public static SimpleMatrix invKinematicsMat_D2(Translation2d... modules) {
+		return invKinematicsMat_D2(new SimpleMatrix(modules.length * 2, 4), modules);
+	}
+	public static SimpleMatrix invKinematicsMat_D2(SimpleMatrix mat, Translation2d... modules) {
+		final int LEN = modules.length;
+		if(mat.numCols() != 4 || mat.numRows() != LEN * 2) {
+			mat.reshape(LEN * 2, 4);
+		}
+		for(int i = 0; i < LEN; i++) {
+			final double x = modules[i].getX(), y = modules[i].getY();
+			mat.setRow(i * 2 + 0, 0, 1, 0, -x, -y);
+			mat.setRow(i * 2 + 1, 0, 0, 1, -y, +x);
+		}
+		return mat;
 	}
 
 }
