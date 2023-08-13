@@ -120,15 +120,15 @@ public class SwerveSimulator implements Sendable {
 		/** Get the effective linear inertia of the module in Kg - meaning the acutal mass plus any
 		 * rotational inertia from the wheel being inline with the force applied, translated by the radius squared
 		 * to represent a linear effect
-		 * @param force_wheel_dtheta - The delta angle between the wheel heading and the applicant force vector. A delta of 0 means that the force and wheel are inline.
+		 * @param vec_wheel_dtheta - The delta angle between the wheel heading and the applicant vector. A delta of 0 means that the vector and wheel are inline.
 		 * @return the combined linear inertia of the module's mass in Kg and any additional inertia introduced from the wheel's geartrain being inline with the applied force. */
-		public double effectiveLinearInertia(double force_wheel_dtheta);	// << 1/sqrt((cos(theta)/(full inertia))^2 + (sin(theta)/(min inertia))^2)
+		public double effectiveLinearInertia(double vec_wheel_dtheta);	// << 1/sqrt((cos(theta)/(full inertia))^2 + (sin(theta)/(min inertia))^2)
 		/** Get the effective rotational inertia in Kgm^2 of the module about the robot's center of gravity. 
-		 * @param torque_wheel_dtheta - the delta angle between the wheel heading and the tangential direction that the torque is acting in
-		 * @param module_radius - the distance from the center of the module to the robot's center of mass, ie the radius at which the torque is being applied, and the radius at which the module's inertia is orbiting
+		 * @param vec_wheel_dtheta - the delta angle between the wheel heading and the tangential direction that the vector is acting in
+		 * @param module_radius - the distance from the center of the module to the robot's center of mass, ie the radius at which the vector is being applied, and the radius at which the module's inertia is orbiting
 		 * @return the combined rotatinal inertia in Kgm^2 of the module (about the robot CG) that is a result of the module's static inertia and any additional
 		 * inertia introduced by the wheel geartrain. */
-		public double effectiveRotationalInertia(double torque_wheel_dtheta, double module_radius);
+		public double effectiveRotationalInertia(double vec_wheel_dtheta, double module_radius);
 
 	}
 
@@ -315,25 +315,89 @@ public class SwerveSimulator implements Sendable {
 
 		Matrix<NX, N1> x_prime = new Matrix<>(x.getStorage().createLike());
 
-		Vector2 f_src = new Vector2();
-		double tq_src = 0.0;
+		final Vector2 f_src = new Vector2();
+		double tq_src = 0.0, momentum_LI = this.config.ROBOT_MASS, momentum_RI = this.config.ROBOT_RI;
+		final double[] wheel_headings = new double[this.SIZE];
+
+		final Vector2 f_vel = new Vector2(
+			State.FrameVelocityX.from(x),
+			State.FrameVelocityY.from(x)
+		); // transform by heading???
+		final double
+			f_avel = State.FrameAngularVel.from(x),
+			f_vel_theta = f_vel.theta();
+
 		for(int i = 0; i < this.SIZE; i++) {
 			final double
 				a_volts = u.get(i * 2, 0),
 				b_volts = u.get(i * 2 + 1, 0),
-				s_angle = State.SteerAngle.fromN(x, i),
+				s_angle = State.SteerAngle.fromN(x, i) % (Math.PI * 2),
 				s_omega = State.SteerRate.fromN(x, i),
 				d_velocity = State.DriveVelocity.fromN(x, i),
 				s_torque = this.module_sims[i].steerTorqueM(a_volts, b_volts, s_omega, d_velocity),
-				steer_aa = this.module_sims[i].steerAAccel(s_torque, s_omega, d_velocity, this.STATIC_MASS * 9.8),
+				steer_aa = this.module_sims[i].steerAAccel(s_torque, s_omega, d_velocity, this.STATIC_MASS * 9.8),	// STEP 0: module turn AA
 				f_wheel = this.module_sims[i].wheelForceM(a_volts, b_volts, s_omega, d_velocity);
 			State.SteerAngle.setN(x_prime, i, s_omega);
 			State.SteerRate.setN(x_prime, i, steer_aa);
+			State.DrivePosition.setN(x_prime, i, d_velocity);
 
-			final Vector2 f = Vector2.fromPolar(f_wheel, s_angle);
-			f_src.append(f);
-			tq_src += this.module_dirs[i].cross(f);
+			final Vector2 wf = Vector2.fromPolar(f_wheel, s_angle);
+			f_src.append(wf);
+			tq_src += this.module_locs[i].cross(wf);			// STEP 1: sum the wheel force vectors to get the net linear force and net torque
+			wheel_headings[i] = s_angle;
+
+			momentum_LI += this.module_sims[i].effectiveLinearInertia(f_vel_theta - s_angle);
+			momentum_RI += this.module_sims[i].effectiveRotationalInertia(Vector2.cross(this.module_locs[i], f_avel).theta() - s_angle, this.module_locs[i].norm());
 		}
+		// debug output for summed force/torque
+		// find system momentum
+		final Vector2 l_momentum = new Vector2(f_vel).times(momentum_LI);
+		final double r_momentum = f_avel * momentum_RI;
+
+		final Vector2 f_frict = new Vector2();
+		double tq_frict = 0.0;
+		for(int i = 0; i < this.SIZE; i++) {
+			final Vector2 f = Vector2.add(
+				f_src,
+				Vector2.invCross(this.module_locs[i], tq_src)
+			).div((double)this.SIZE);
+			final Vector2 p = Vector2.add(
+				l_momentum,
+				Vector2.invCross(this.module_locs[i], r_momentum)
+			).div((double)this.SIZE);
+			final Vector2 wdir = Vector2.fromPolar(1.0, wheel_headings[i]);
+			final double
+				f_para = Vector2.dot(f, wdir),
+				f_poip = Vector2.cross(f, wdir),
+				p_para = Vector2.dot(p, wdir),
+				p_poip = Vector2.cross(p, wdir),
+				fr_inline = this.module_sims[i].wheelGearFriction(f_para, p_para, this.STATIC_MASS * 9.8),
+				fr_side = this.module_sims[i].wheelSideFriction(f_poip, p_poip, this.STATIC_MASS * 9.8);
+			final Vector2 frict = new Vector2(fr_inline, fr_side).rotate(wheel_headings[i]);
+
+			f_frict.append(frict);
+			tq_frict += this.module_locs[i].cross(frict);
+		}
+		// add sources and friction
+		final Vector2 f_sys = new Vector2();
+		final double tq_sys = 0.0, f_sys_theta = f_sys.theta();
+		double sys_LI = this.config.ROBOT_MASS, sys_RI = this.config.ROBOT_RI;
+		for(int i = 0; i < this.SIZE; i++) {
+			sys_LI += this.module_sims[i].effectiveLinearInertia(f_sys_theta - wheel_headings[i]);
+			sys_RI += this.module_sims[i].effectiveRotationalInertia(Vector2.cross(this.module_locs[i], tq_sys).theta() - wheel_headings[i], this.module_locs[i].norm());
+		}
+		final Vector2 frame_acc = new Vector2(f_sys).div(sys_LI);
+		final double frame_aacc = tq_sys / sys_RI;
+
+		// transform based on heading???
+		State.FrameVelocityX.set(x_prime, frame_acc.x());
+		State.FrameVelocityY.set(x_prime, frame_acc.y());
+		State.FrameAngularVel.set(x_prime, frame_aacc);
+		State.FramePositionX.set(x_prime, f_vel.x());
+		State.FramePositionY.set(x_prime, f_vel.y());
+		State.FrameRotation.set(x_prime, f_avel);
+
+		// use kinematics to set wheel accelerations
 
 		return x_prime;
 
@@ -399,6 +463,14 @@ public class SwerveSimulator implements Sendable {
 			this.set(x() / n, y() / n);
 			return this;
 		}
+		public Vector2 div(double v) {
+			this.set(x() / v, y() / v);
+			return this;
+		}
+		public Vector2 times(double v) {
+			this.set(x() * v, y() * v);
+			return this;
+		}
 
 		public Vector2 rotate(double radians) {
 			final double
@@ -437,8 +509,17 @@ public class SwerveSimulator implements Sendable {
 		public double cos(Vector2 v) {
 			return this.dot(v) / (this.norm() * v.norm());
 		}
+		public double theta() {
+			return Math.atan2(y(), x());
+		}
 
 
+		public static Vector2 add(Vector2 a, Vector2 b) {
+			return new Vector2(a.x() + b.x(), a.y() + b.y());
+		}
+		public static Vector2 sub(Vector2 a, Vector2 b) {
+			return new Vector2(a.x() - b.x(), a.y() - b.y());
+		}
 		public static Vector2 fromPolar(double mag, double radians) {
 			return new Vector2(mag * Math.cos(radians), mag * Math.sin(radians));
 		}
@@ -459,6 +540,9 @@ public class SwerveSimulator implements Sendable {
 		}
 		public static Vector2 cross(Vector2 v, double z_projection) {
 			return new Vector2(v).cross_CW(z_projection);
+		}
+		public static Vector2 invCross(Vector2 r, double z) {			// perform a cross product but the result is equal to |tq|sin(theta)/|r| not |tq||r|sin(theta) -- used to find a resultant force vector from a given torque and applicant radius vector
+			return new Vector2(r).cross(z).div(Vector2.dot(r, r));
 		}
 		public static Vector2 unitVec(Vector2 v) {
 			return new Vector2(v).normalize();

@@ -171,4 +171,5 @@ public class SwerveDrive implements Subsystem, Sendable {
 		b.addDoubleArrayProperty("Wheel Vectors 2d", ()->SwerveVisualization.getVecComponents2d(this.states), null);
 	}
 
+
 }
