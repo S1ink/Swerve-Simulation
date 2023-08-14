@@ -16,80 +16,96 @@ import frc.robot.swerve.SwerveUtils.*;
 
 public class SwerveSimulator implements Sendable {
 
-	public static interface FrictionSim {
+	// public static interface FrictionSim {
 
-		public static final double DEFAULT_MOMENTUM_EPSILON = 1e-5;		// no standardized units so this may not be applicable for every situation
-		public static boolean movement(double momentum) { return movement(momentum, DEFAULT_MOMENTUM_EPSILON); }
-		public static boolean movement(double momentum, double epsilon) { return Math.abs(momentum) > epsilon; }
+	// 	public static final double DEFAULT_MOMENTUM_EPSILON = 1e-5;		// no standardized units so this may not be applicable for every situation
+	// 	public static boolean movement(double momentum) { return movement(momentum, DEFAULT_MOMENTUM_EPSILON); }
+	// 	public static boolean movement(double momentum, double epsilon) { return Math.abs(momentum) > epsilon; }
 
-		public double rawFriction(double force, double momentum);
+	// 	public double rawFriction(double force, double momentum);
 
-		// default public double applyFriction(double force, double momentum) {	// "dumb" (non temporal) addition of applied friciton vector and external force
-		// 	final double raw = this.rawFriction(force, momentum);
-		// 	return force + Math.copySign(Math.min(Math.abs(raw), Math.abs(force)), raw);
-		// }
-		// default public double applyFriction(double force, double momentum, double dt) {		// "smart" integration of applied friction as it opposes momentum and external forces temporally -- returns the time-weighted average applied force over the change in time
-		// 	final double initial = force + this.rawFriction(force, momentum);
-		// 	double dt_a = 0.0;
-		// 	if((initial * momentum < 0.0) && ((dt_a = Math.abs(momentum / initial)) < dt)) {		// inital sum opposes the momentum AND cancels out the momentum in less time than 'dt'
-		// 		final double secondary = force + this.rawFriction(force, 0.0);
+	// 	// default public double applyFriction(double force, double momentum) {	// "dumb" (non temporal) addition of applied friciton vector and external force
+	// 	// 	final double raw = this.rawFriction(force, momentum);
+	// 	// 	return force + Math.copySign(Math.min(Math.abs(raw), Math.abs(force)), raw);
+	// 	// }
+	// 	// default public double applyFriction(double force, double momentum, double dt) {		// "smart" integration of applied friction as it opposes momentum and external forces temporally -- returns the time-weighted average applied force over the change in time
+	// 	// 	final double initial = force + this.rawFriction(force, momentum);
+	// 	// 	double dt_a = 0.0;
+	// 	// 	if((initial * momentum < 0.0) && ((dt_a = Math.abs(momentum / initial)) < dt)) {		// inital sum opposes the momentum AND cancels out the momentum in less time than 'dt'
+	// 	// 		final double secondary = force + this.rawFriction(force, 0.0);
 
-		// 	} else {
-		// 		return initial;
-		// 	}
-		// }
-	}
-	public static class DualStateFrictionSim implements FrictionSim {
+	// 	// 	} else {
+	// 	// 		return initial;
+	// 	// 	}
+	// 	// }
+	// }
+	// public static class DualStateFrictionSim implements FrictionSim {
 
-		public final double
-			u_static, u_kinetic;
-		protected double
-			norm_scalar = 0.0;
+	// 	public final double
+	// 		u_static, u_kinetic;
+	// 	protected double
+	// 		norm_scalar = 0.0;
 
-		public DualStateFrictionSim(double u_static, double u_kinetic) {
-			this.u_static = u_static;
-			this.u_kinetic = u_kinetic;
-		}
-		public DualStateFrictionSim(double u_static, double u_kinetic, double norm_force) {
-			this(u_static, u_kinetic);
-			this.norm_scalar = norm_force;
-		}
+	// 	public DualStateFrictionSim(double u_static, double u_kinetic) {
+	// 		this.u_static = u_static;
+	// 		this.u_kinetic = u_kinetic;
+	// 	}
+	// 	public DualStateFrictionSim(double u_static, double u_kinetic, double norm_force) {
+	// 		this(u_static, u_kinetic);
+	// 		this.norm_scalar = norm_force;
+	// 	}
 
-		public void setNormalForce(double f) { this.norm_scalar = f; }
-		private double appliedStatic() { return this.norm_scalar * this.u_static; }
-		private double appliedKinetic() { return this.norm_scalar * this.u_kinetic; }
+	// 	public void setNormalForce(double f) { this.norm_scalar = f; }
+	// 	private double appliedStatic() { return this.norm_scalar * this.u_static; }
+	// 	private double appliedKinetic() { return this.norm_scalar * this.u_kinetic; }
 
-		@Override
-		public double rawFriction(double force, double momentum) {
-			if(FrictionSim.movement(momentum)) {
-				return -Math.copySign(appliedKinetic(), momentum);	// (kinetic) friction will oppose the prexisting momentum
-			} else {
-				return -Math.copySign(appliedStatic(), force);	// (static) friciton will oppose the applied force
-			}
-		}
+	// 	@Override
+	// 	public double rawFriction(double force, double momentum) {
+	// 		if(FrictionSim.movement(momentum)) {
+	// 			return -Math.copySign(appliedKinetic(), momentum);	// (kinetic) friction will oppose the prexisting momentum
+	// 		} else {
+	// 			return -Math.copySign(appliedStatic(), force);	// (static) friciton will oppose the applied force
+	// 		}
+	// 	}
 
-	}
+	// }
 
-	/** {@link ModuleSim} represents/contains all the necessary physical behavior (or approximations) needed
+	/** {@link SwerveModuleSim} represents/contains all the necessary physical behavior (or approximations) needed
 	 * for the simulator to be able to simulate the robot's movement as a result of voltage inputs and possible
 	 * additional external forces. */
-	public static interface ModuleSim {
+	public static interface SwerveModuleSim {
 
-		/** Get the torque applied to the wheel assembly about the steering axis in Nm ("felt" by the output of any possible gearing)
-		 * as a result of the motor dynamics. 
+		// public static final class MotorStates {
+		// 	public double
+		// 		a_volts,
+		// 		b_volts,
+		// 		steer_rate,
+		// 		wheel_vel_linear;
+	
+		// 	public MotorStates(double av, double bv, double srate, double wvel) {
+		// 		this.a_volts = av;
+		// 		this.b_volts = bv;
+		// 		this.steer_rate = srate;
+		// 		this.wheel_vel_linear = wvel;
+		// 	}
+		// }
+
+		// /** Get the torque applied to the wheel assembly about the steering axis in Nm ("felt" by the output of any possible gearing)
+		//  * as a result of the motor dynamics. 
+		//  * @param a_volts - the voltage applied to motor A in volts
+		//  * @param b_volts - the voltage applied to motor B in volts
+		//  * @param steer_rate - the angular velocity of the wheel assembly about the steering axis in rad/s
+		//  * @param wheel_vel_linear - the linear velocity of the module along the wheel path in m/s
+		//  * @return the resulting torque about the steer axis in Nm */
+		// public double steerTorqueM(double a_volts, double b_volts, double steer_rate, double wheel_vel_linear);
+		/** Get the sum angular acceleration of the wheel assembly about the steer axis.
 		 * @param a_volts - the voltage applied to motor A in volts
 		 * @param b_volts - the voltage applied to motor B in volts
-		 * @param steer_rate - the angular velocity of the wheel assembly about the steering axis in rad/s
-		 * @param wheel_vel_linear - the linear velocity of the module along the wheel path in m/s
-		 * @return the resulting torque about the steer axis in Nm */
-		public double steerTorqueM(double a_volts, double b_volts, double steer_rate, double wheel_vel_linear);
-		/** Get the sum angular acceleration of the wheel assembly about the steer axis
-		 * @param steer_torque - the torque applied about the steer axis as a result of the motor dynamics in Nm
 		 * @param steer_rate - the current angular velocity of the wheel assimbly about the steer axis in rad/s
 		 * @param wheel_vel_linear - the linear velocity of the module along the wheel path in m/s
 		 * @param f_norm - the normal force in N applied at the wheel-floor contact as a result of gravity and possible external forces
 		 * @return the angular acceleration of the wheel assembly about the steering axis in rad/s^2 */
-		public double steerAAccel(double steer_torque, double steer_rate, double wheel_vel_linear, double f_norm);
+		public double steerAAccel(double a_volts, double b_volts, double steer_rate, double wheel_vel_linear, double f_norm);
 
 		/** Get the output force at the wheel-floor contact in N as a result of the motor dynamics.
 		 * @param a_volts - the voltage applied to motor A in volts
@@ -100,18 +116,22 @@ public class SwerveSimulator implements Sendable {
 		public double wheelForceM(double a_volts, double b_volts, double steer_rate, double wheel_vel_linear);
 		/** Get the friction force in N applied at the wheel-floor contact 
 		 * as a result of the wheel being pushed/moved sideways.
-		 * @param f_src - the sum external force acting on the wheel in N
+		 * @param f_src - the sum external force acting on the wheel in N, perpendicular to the wheel's heading
 		 * @param momentum - the robot's tangential momentum felt at the wheel contact location in Kgm/s
 		 * @param f_norm - the normal force in N applied at the wheel-floor contact as a result of gravity and possible external forces
 		 * @return the friciton force in N */
 		public double wheelSideFriction(double f_src, double momentum, double f_norm);
-		/** Get the friction force in Nm applied at the wheel radius as a result of the wheel being
+		/** Get the friction force in N applied at the wheel radius as a result of the wheel being
 		 * pushed/moved inline with its heading.
-		 * @param f_src - the sum external force acting on the wheel in N
+		 * @param f_src - the sum external force acting on the wheel in N, parallel to the wheel's heading
 		 * @param momenum - the robot's tangential momentum felt at the wheel contact location in Kgm/s
+		 * @param a_volts - the voltage applied to motor A in volts
+		 * @param b_volts - the voltage applied to motor B in volts
+		 * @param steer_rate - the current angular velocity of the wheel assimbly about the steer axis in rad/s
+		 * @param wheel_vel_linear - the linear velocity of the module along the wheel path in m/s
 		 * @param f_norm - the normal force in N applied at the wheel-floor contact as a result of gravity and possible external forces
 		 * @return the friction force in N at the wheel radius */
-		public double wheelGearFriction(double f_src, double momentum, double f_norm);
+		public double wheelGearFriction(double f_src, double momentum, double a_volts, double b_volts, double steer_rate, double wheel_vel_linear, double f_norm);
 
 		/** Get the linear inertia of the module in Kg, not including any inertia from the wheel gear train.
 		 * @return the mass of the module in Kg	*/
@@ -192,7 +212,7 @@ public class SwerveSimulator implements Sendable {
 	}
 
 	private final SwerveModule[] modules;
-	private final ModuleSim[] module_sims;
+	private final SwerveModuleSim[] module_sims;
 	private final SimConfig config;
 	private final SwerveVisualization visualization;
 	private final Vector2[] module_locs, module_dirs;
@@ -209,18 +229,18 @@ public class SwerveSimulator implements Sendable {
 	public SwerveSimulator(SimConfig config, SwerveModule... modules) {
 		this(config, null, modules);
 	}
-	public SwerveSimulator(SimConfig config, ModuleSim sim_properties, SwerveModule... modules) {
+	public SwerveSimulator(SimConfig config, SwerveModuleSim sim_properties, SwerveModule... modules) {
 		this(new SwerveVisualization(getTranslations(modules)), config, sim_properties, modules);
 	}
 	public SwerveSimulator(SwerveVisualization viz, SimConfig config, SwerveModule... modules) {
 		this(viz, config, null, modules);
 	}
-	public SwerveSimulator(SwerveVisualization viz, SimConfig config, ModuleSim sim_properties, SwerveModule... modules) {
+	public SwerveSimulator(SwerveVisualization viz, SimConfig config, SwerveModuleSim sim_properties, SwerveModule... modules) {
 		this.modules = modules;
 		this.visualization = viz;
 		this.config = config;
 		this.SIZE = modules.length;
-		this.module_sims = new ModuleSim[this.SIZE];
+		this.module_sims = new SwerveModuleSim[this.SIZE];
 		this.module_locs = new Vector2[this.SIZE];
 		this.module_dirs = new Vector2[this.SIZE];
 		this.n_inputs = NX.of(this.SIZE * 2);
@@ -239,7 +259,7 @@ public class SwerveSimulator implements Sendable {
 		}
 	}
 
-	public void applySimProperties(ModuleSim properties) {
+	public void applySimProperties(SwerveModuleSim properties) {
 		this.STATIC_MASS = this.config.ROBOT_MASS + properties.moduleMass() * this.SIZE;
 		for(int i = 0; i < this.SIZE; i++) {
 			this.module_sims[i] = properties;
@@ -248,7 +268,7 @@ public class SwerveSimulator implements Sendable {
 	public void applyModuleSpecificProperties() {
 		this.STATIC_MASS = this.config.ROBOT_MASS;
 		for(int i = 0; i < this.SIZE; i++) {
-			final ModuleSim props = null;	// get from this.modules[i]
+			final SwerveModuleSim props = this.modules[i].getSimProperties();
 			if(props != null) {
 				this.module_sims[i] = props;
 				this.STATIC_MASS += props.moduleMass();
@@ -298,16 +318,12 @@ public class SwerveSimulator implements Sendable {
 	}
 
 
-	protected final double
-		STEER_GEARTRAIN_FRICTION_TQ = 1.0,
-		STEER_FLOOR_FRICTION_TQ = 10.0;		// coeff of friction * f_norm (robot mass * fg) -- integrated about the wheel contact patch (radius at each point) --> multiply by 2/3*r
-
-	protected double applyFriction(double src_d2x, double src_dx, double f_d2x, double dt) {
+	protected static double applyFriction(double src_d2x, double src_dx, double fr_d2x, double dt) {
 		final double vdir = Math.signum(src_dx);	// apply epsilon --> 0.0
 		if(vdir != 0.0) {	// friction opposes the movement
-			return src_d2x - Math.min(Math.abs(f_d2x), Math.abs(src_dx / dt)) * vdir;	// make sure that the applied friction cannot reverse the direction based on dt
+			return src_d2x + Math.min(Math.abs(fr_d2x), Math.abs(src_dx / dt)) * -vdir;	// make sure that the applied friction cannot reverse the direction based on dt
 		} else {	// sum the source forces and friction (applied in opposition)
-			return src_d2x - Math.min(Math.abs(f_d2x), Math.abs(src_d2x)) * Math.signum(src_d2x);
+			return src_d2x + Math.min(Math.abs(fr_d2x), Math.abs(src_d2x)) * -Math.signum(src_d2x);
 		}
 	}
 	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u) {
@@ -333,8 +349,8 @@ public class SwerveSimulator implements Sendable {
 				s_angle = State.SteerAngle.fromN(x, i) % (Math.PI * 2),
 				s_omega = State.SteerRate.fromN(x, i),
 				d_velocity = State.DriveVelocity.fromN(x, i),
-				s_torque = this.module_sims[i].steerTorqueM(a_volts, b_volts, s_omega, d_velocity),
-				steer_aa = this.module_sims[i].steerAAccel(s_torque, s_omega, d_velocity, this.STATIC_MASS * 9.8),	// STEP 0: module turn AA
+				// s_torque = this.module_sims[i].steerTorqueM(a_volts, b_volts, s_omega, d_velocity),
+				steer_aa = this.module_sims[i].steerAAccel(a_volts, b_volts, s_omega, d_velocity, this.STATIC_MASS * 9.8),	// STEP 0A: module steering AA
 				f_wheel = this.module_sims[i].wheelForceM(a_volts, b_volts, s_omega, d_velocity);
 			State.SteerAngle.setN(x_prime, i, s_omega);
 			State.SteerRate.setN(x_prime, i, steer_aa);
@@ -342,10 +358,10 @@ public class SwerveSimulator implements Sendable {
 
 			final Vector2 wf = Vector2.fromPolar(f_wheel, s_angle);
 			f_src.append(wf);
-			tq_src += this.module_locs[i].cross(wf);			// STEP 1: sum the wheel force vectors to get the net linear force and net torque
+			tq_src += this.module_locs[i].cross(wf);		// STEP 1A: sum the wheel force vectors to get the net linear force and net torque
 			wheel_headings[i] = s_angle;
 
-			momentum_LI += this.module_sims[i].effectiveLinearInertia(f_vel_theta - s_angle);
+			momentum_LI += this.module_sims[i].effectiveLinearInertia(f_vel_theta - s_angle);	// STEP 1B: sum the linear and angular momentum amongst the modules (dependant on wheel headings)
 			momentum_RI += this.module_sims[i].effectiveRotationalInertia(Vector2.cross(this.module_locs[i], f_avel).theta() - s_angle, this.module_locs[i].norm());
 		}
 		// debug output for summed force/torque
@@ -366,26 +382,32 @@ public class SwerveSimulator implements Sendable {
 			).div((double)this.SIZE);
 			final Vector2 wdir = Vector2.fromPolar(1.0, wheel_headings[i]);
 			final double
+				a_volts = u.get(i * 2, 0),
+				b_volts = u.get(i * 2 + 1, 0),
+				s_omega = State.SteerRate.fromN(x, i),
+				d_velocity = State.DriveVelocity.fromN(x, i),
 				f_para = Vector2.dot(f, wdir),
 				f_poip = Vector2.cross(f, wdir),
 				p_para = Vector2.dot(p, wdir),
 				p_poip = Vector2.cross(p, wdir),
-				fr_inline = this.module_sims[i].wheelGearFriction(f_para, p_para, this.STATIC_MASS * 9.8),
-				fr_side = this.module_sims[i].wheelSideFriction(f_poip, p_poip, this.STATIC_MASS * 9.8);
+				fr_inline = this.module_sims[i].wheelGearFriction(f_para, p_para, a_volts, b_volts, s_omega, d_velocity, this.STATIC_MASS * 9.8),
+				fr_side = this.module_sims[i].wheelSideFriction(f_poip, p_poip, this.STATIC_MASS * 9.8);	// STEP 2A: collect side and geartrain friction for each module
 			final Vector2 frict = new Vector2(fr_inline, fr_side).rotate(wheel_headings[i]);
 
 			f_frict.append(frict);
-			tq_frict += this.module_locs[i].cross(frict);
+			tq_frict += this.module_locs[i].cross(frict);	// STEP 2B: sum friction forces
 		}
 		// add sources and friction
-		final Vector2 f_sys = new Vector2();
-		final double tq_sys = 0.0, f_sys_theta = f_sys.theta();
+		final Vector2 f_sys = Vector2.applyFriction(f_src, l_momentum, f_frict, 0.0);	// STEP 3A: sum source and friction forces/torque for the whole system
+		final double
+			tq_sys = applyFriction(tq_src, r_momentum, tq_frict, 0.0),
+			f_sys_theta = f_sys.theta();
 		double sys_LI = this.config.ROBOT_MASS, sys_RI = this.config.ROBOT_RI;
 		for(int i = 0; i < this.SIZE; i++) {
-			sys_LI += this.module_sims[i].effectiveLinearInertia(f_sys_theta - wheel_headings[i]);
+			sys_LI += this.module_sims[i].effectiveLinearInertia(f_sys_theta - wheel_headings[i]);	// STEP 3B: collect module inertias based on summed force/torque vectors
 			sys_RI += this.module_sims[i].effectiveRotationalInertia(Vector2.cross(this.module_locs[i], tq_sys).theta() - wheel_headings[i], this.module_locs[i].norm());
 		}
-		final Vector2 frame_acc = new Vector2(f_sys).div(sys_LI);
+		final Vector2 frame_acc = new Vector2(f_sys).div(sys_LI);	// STEP 4: calc system accelerations
 		final double frame_aacc = tq_sys / sys_RI;
 
 		// transform based on heading???
@@ -551,6 +573,12 @@ public class SwerveSimulator implements Sendable {
 		}
 		public static double cos(Vector2 a, Vector2 b) {
 			return a.cos(b);
+		}
+		public static Vector2 applyFriction(Vector2 f_src, Vector2 momentum, Vector2 f_frict, double dt) {
+			return new Vector2(
+				SwerveSimulator.applyFriction(f_src.x(), momentum.x(), f_frict.x(), dt),
+				SwerveSimulator.applyFriction(f_src.y(), momentum.y(), f_frict.y(), dt)
+			);
 		}
 
 		public static Matrix<N2, N2> rmat(double radians) {

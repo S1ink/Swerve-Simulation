@@ -170,13 +170,13 @@ public class FalconMK4i extends SwerveModule {
 	public double getMotorBVolts() { return this.drive_motor.getBusVoltage(); }
 
 	@Override
-	public SwerveSimulator.ModuleSim getSimProperties() { return null; }
+	public SwerveSimulator.SwerveModuleSim getSimProperties() { return null; }
 
 
 
-	public static class FalconMK4iSim implements SwerveSimulator.ModuleSim {
+	public static class FalconMK4iSim implements SwerveSimulator.SwerveModuleSim {
 
-		
+
 
 	}
 

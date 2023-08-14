@@ -67,7 +67,7 @@ public abstract class SwerveModule implements Sendable {
 	/** Get the voltage applied to motor B */
 	public double getMotorBVolts() { return 0.0; }
 	/** Get all simulation required functionality */
-	public SwerveSimulator.ModuleSim getSimProperties() { return null; }
+	public SwerveSimulator.SwerveModuleSim getSimProperties() { return null; }
 
 	/** Set the simulated steering angle in radians */
 	public void setSimulatedSteeringAngle(double angle) {}
