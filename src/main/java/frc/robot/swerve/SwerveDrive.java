@@ -70,6 +70,9 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 
 
 
+
+
+	/** GenericSwerveDrive allows for multiple implementations of SwerveModule to be used in the same drivebase, but sacrifices specific module type functionality */
 	public static class GenericSwerveDrive extends SwerveDrive<SwerveModule> {
 
 		public GenericSwerveDrive(Gyro gyro, SwerveModule... modules) {
