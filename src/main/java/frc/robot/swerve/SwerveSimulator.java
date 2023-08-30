@@ -29,6 +29,7 @@ public class SwerveSimulator implements Sendable {
 		public SimConfig(
 			double robot_mass, double robot_RI
 		) {
+r
 			this.ROBOT_MASS = robot_mass;
 			this.ROBOT_RI = robot_RI;
 		}

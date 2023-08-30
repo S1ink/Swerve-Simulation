@@ -58,9 +58,10 @@ public class TestSim extends CommandBase {
 		) {
 			final double
 				m_av = steer_gt.propegateVelRev(steer_rate),	// turn rate to motor speed via gearing
+				gt_p = steer_gt.endInertia() * steer_rate,
 				o_tq = steer_gt.propegateTq(steer_motor.getTorque(steer_motor.getCurrent(m_av, a_volts))),	// motor torque geared @ output
 				f_tq = steer_gt.sumFrictionRev(steer_rate, o_tq, steer_gt_frict) + steer_floor_frict.calc(f_norm, steer_rate, o_tq),
-				s_tq = o_tq - f_tq;		// applyFriction() here
+				s_tq = FrictionModel.applyFriction(o_tq, gt_p, f_tq, 0.0);
 			return s_tq / STEER_GT_RI;
 
 		}
