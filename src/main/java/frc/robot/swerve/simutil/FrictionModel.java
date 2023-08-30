@@ -11,17 +11,17 @@ public interface FrictionModel {
 
 
 	/** Sum external forces with a maximum friction component while taking into account the current momentum (friction can only "slow down", not reverse movement)
-	 * @param f_ext - the sum applicant force at the friction interaction
-	 * @param p_ext - the system's relative momentum
-	 * @param f_fr - the maximum friction force that can be applied
+	 * @param f_app - the sum applicant force at the friction interaction
+	 * @param p_sys - the system's relative momentum
+	 * @param f_frict - the maximum friction force that can be applied
 	 * @param dt - the timestep under which the calculation is being done, if applicable
 	*/
-	public static double applyFriction(double f_ext, double p_ext, double f_fr, double dt) {
-		final double vdir = Math.signum(p_ext);	// apply epsilon --> 0.0
+	public static double applyFriction(double f_app, double p_sys, double f_frict, double dt) {
+		final double vdir = Math.signum(p_sys);	// apply epsilon --> 0.0
 		if(vdir != 0.0) {	// friction opposes the movement
-			return f_ext + Math.min(Math.abs(f_fr), Math.abs(p_ext / dt)) * -vdir;	// make sure that the applied friction cannot reverse the direction based on dt
+			return f_app + Math.min(Math.abs(f_frict), Math.abs(p_sys / dt)) * -vdir;	// make sure that the applied friction cannot reverse the direction based on dt
 		} else {	// sum the source forces and friction (applied in opposition)
-			return f_ext + Math.min(Math.abs(f_fr), Math.abs(f_ext)) * -Math.signum(f_ext);
+			return f_app + Math.min(Math.abs(f_frict), Math.abs(f_app)) * -Math.signum(f_app);
 		}
 	}
 

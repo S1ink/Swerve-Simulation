@@ -207,18 +207,20 @@ public class SwerveSimulator implements Sendable {
 		 * 
 		 * ...anything after is a descriptor. */
 
-		// STEP -0: Static final shortcut calculations
+		// STEP -0: Static shortcut calculations
 		final double F_norm_z = this.STATIC_MASS * 9.8;
 
-		// STEP 0A: Allocate buffers for delta, sum applictant force/torque, headings, momentum
+		// STEP 0A: Allocate buffers for delta, system applictant force/torque, friction, headings, system momentum
 		final Matrix<NX, N1>
 			x_prime = new Matrix<>(x.getStorage().createLike());
 		final Vector2
-			F_app = new Vector2();
+			F_app = new Vector2(),
+			F_frict = new Vector2();
 		final double[]
 			wheel_headings = new double[this.SIZE];
 		double
-			tq_app = 0.0,
+			Tq_app = 0.0,
+			Tq_frict = 0.0,
 			lI_momentum = this.config.ROBOT_MASS,
 			rI_momentum = this.config.ROBOT_RI;
 
@@ -226,10 +228,10 @@ public class SwerveSimulator implements Sendable {
 		final Vector2
 			lv_frame = new Vector2(
 				State.FrameVelocityX.from(x),
-				State.FrameVelocityY.from(x)	);		// transform by heading???
+				State.FrameVelocityY.from(x) );			// transform by heading???
 		final double
-			av_frame = State.FrameAngularVel.from(x),
-			ax_frame_vel = lv_frame.theta();			// transform by heading???
+			rv_frame = State.FrameAngularVel.from(x),
+			rx_frame_lv = lv_frame.theta();				// transform by heading???
 
 		// STEP 1: Module iteration #1
 		for(int i = 0; i < this.SIZE; i++) {
@@ -241,8 +243,8 @@ public class SwerveSimulator implements Sendable {
 				rv_steer = State.SteerRate.fromN(x, i),
 				lv_wheel = State.DriveVelocity.fromN(x, i),
 			// STEP 1B(xN): Initial module property calculations
-				ra_steer = this.module_models[i].steerAAccel(volts_a, volts_b, rv_steer, lv_wheel, F_norm_z),
-				F_wheel = this.module_models[i].wheelForceM(volts_a, volts_b, rv_steer, lv_wheel);
+				ra_steer = this.module_models[i].steerAAccel( volts_a, volts_b, rv_steer, lv_wheel, F_norm_z ),
+				F_wheel = this.module_models[i].wheelForceM( volts_a, volts_b, rv_steer, lv_wheel );
 			// STEP 1C(xN): Set applicant output deltas
 			State.SteerAngle.setN(x_prime, i, rv_steer);
 			State.SteerRate.setN(x_prime, i, ra_steer);
@@ -253,71 +255,91 @@ public class SwerveSimulator implements Sendable {
 				F_wheel_2d = Vector2.fromPolar(F_wheel, rx_steer);
 			// STEP 1E(xN): Sum the system's applicant force and torque, store headings
 			F_app.append(F_wheel_2d);
-			tq_app += this.module_locs[i].cross(F_wheel_2d);
+			Tq_app += this.module_locs[i].cross(F_wheel_2d);
 			wheel_headings[i] = rx_steer;
 			// STEP 1F(xN): Sum the system's linear and rotational momentum based on the direction of these velocities (includes wheel geartrain inertia)
-			lI_momentum += this.module_models[i].effectiveLinearInertia(ax_frame_vel - rx_steer);
+			lI_momentum += this.module_models[i].effectiveLinearInertia( (rx_frame_lv - rx_steer) );
 			rI_momentum += this.module_models[i].effectiveRotationalInertia(
-				Vector2.cross(this.module_locs[i], av_frame).theta() - rx_steer, this.module_locs[i].norm());
+				(Vector2.cross( rv_frame, this.module_locs[i] ).theta() - rx_steer), this.module_locs[i].norm() );
 		}
 		// STEP 1G: Total system linear and rotational momentum
 		final Vector2
 			lP_sys = new Vector2(lv_frame).times(lI_momentum);
 		final double
-			rP_sys = av_frame * rI_momentum;
+			rP_sys = rv_frame * rI_momentum;
 
 		// debug initial summations here
 
-		final Vector2 f_frict = new Vector2();
-		double tq_frict = 0.0;
+		// STEP 2: Calculate friction (module iteration #2)
 		for(int i = 0; i < this.SIZE; i++) {
-			final Vector2 f = Vector2.add(
-				F_app,
-				Vector2.invCross(this.module_locs[i], tq_app)
-			).div((double)this.SIZE);
-			final Vector2 p = Vector2.add(
-				lP_sys,
-				Vector2.invCross(this.module_locs[i], rP_sys)
-			).div((double)this.SIZE);
-			final Vector2 wdir = Vector2.fromPolar(1.0, wheel_headings[i]);
+			final Vector2
+			// STEP 2A(xN): Calc the force component acting at the module's CG
+				Fn = Vector2
+					.add( F_app, Vector2.invCross( Tq_app / this.SIZE, this.module_locs[i] ) ),
+				lvn = Vector2
+					.add( lv_frame, Vector2.cross( rv_frame, this.module_locs[i] ) ),	// part of this is already calculated in the first iteration :\
+				// Pn = Vector2
+				// 	.add( lP_sys, Vector2.invCross(this.module_locs[i], rP_sys / this.SIZE) ),
+				wheel_heading = Vector2.fromPolar( 1.0, wheel_headings[i] );
 			final double
-				a_volts = u.get(i * 2, 0),
-				b_volts = u.get(i * 2 + 1, 0),
-				s_omega = State.SteerRate.fromN(x, i),
-				d_velocity = State.DriveVelocity.fromN(x, i),
-				f_para = Vector2.dot(f, wdir),
-				f_poip = Vector2.cross(f, wdir),
-				p_para = Vector2.dot(p, wdir),
-				p_poip = Vector2.cross(p, wdir),
-				fr_inline = this.module_models[i].wheelGearFriction(f_para, p_para, a_volts, b_volts, s_omega, d_velocity, F_norm_z),
-				fr_side = this.module_models[i].wheelSideFriction(f_poip, p_poip, F_norm_z);	// STEP 2A: collect side and geartrain friction for each module
-			final Vector2 frict = new Vector2(fr_inline, fr_side).rotate(wheel_headings[i]);
-
-			f_frict.append(frict);
-			tq_frict += this.module_locs[i].cross(frict);	// STEP 2B: sum friction forces
+			// STEP 2B(xN): Split Fn vector into components that are aligned with the wheel's heading
+				F_para = Vector2.dot( wheel_heading, Fn ),
+				F_poip = Vector2.cross( wheel_heading, Fn ),
+				lv_poip = Vector2.cross( wheel_heading, lvn ),
+				// P_para = Vector2.dot(Pn, wheel_heading),
+				// P_poip = Vector2.cross(Pn, wheel_heading),
+				volts_a = u.get(i * 2, 0),
+				volts_b = u.get(i * 2 + 1, 0),
+				rv_steer = State.SteerRate.fromN(x, i),
+				lv_wheel = State.DriveVelocity.fromN(x, i),
+			// STEP 2C(xN): Calc maximum friction force in each direction via module properties
+				F_inline_frict = this.module_models[i]
+					.wheelGearFriction( F_norm_z, F_para, volts_a, volts_b, rv_steer, lv_wheel ),
+				F_side_frict = this.module_models[i]
+					.wheelSideFriction( F_norm_z, F_poip, lv_poip );
+			final Vector2
+			// STEP 2D(xN): Combine friction components into a single vector
+				F_frict_n = new Vector2( F_inline_frict, F_side_frict ).rotate( wheel_headings[i] );
+			// STEP 2E(xN): Append to total friction and torque vectors
+			F_frict.append(F_frict_n);
+			Tq_frict += this.module_locs[i].cross(F_frict_n);
 		}
-		// add sources and friction
-		final Vector2 f_sys = Vector2.applyFriction(F_app, lP_sys, f_frict, 0.0);	// STEP 3A: sum source and friction forces/torque for the whole system
+
+		// STEP 3: Sum the applicant and friction force/torque such that the momentum does not change direction because of friction
+		final Vector2
+			F_sys = Vector2.applyFriction( F_app, lP_sys, F_frict, 0.0 );
 		final double
-			tq_sys = FrictionModel.applyFriction(tq_app, rP_sys, tq_frict, 0.0),
-			f_sys_theta = f_sys.theta();
-		double sys_LI = this.config.ROBOT_MASS, sys_RI = this.config.ROBOT_RI;
+			Tq_sys = FrictionModel.applyFriction( Tq_app, rP_sys, Tq_frict, 0.0 ),
+			ax_f_sys = F_sys.theta();
+		// STEP 4: Sum the system inertias based on the direction of net force/torque
+		double
+			lI_sys = this.config.ROBOT_MASS,
+			rI_sys = this.config.ROBOT_RI;
 		for(int i = 0; i < this.SIZE; i++) {
-			sys_LI += this.module_models[i].effectiveLinearInertia(f_sys_theta - wheel_headings[i]);	// STEP 3B: collect module inertias based on summed force/torque vectors
-			sys_RI += this.module_models[i].effectiveRotationalInertia(Vector2.cross(this.module_locs[i], tq_sys).theta() - wheel_headings[i], this.module_locs[i].norm());
+			lI_sys += this.module_models[i].effectiveLinearInertia( (ax_f_sys - wheel_headings[i]) );
+			rI_sys += this.module_models[i].effectiveRotationalInertia(
+				(Vector2.cross( Tq_sys, this.module_locs[i] ).theta() - wheel_headings[i]), this.module_locs[i].norm() );
 		}
-		final Vector2 frame_acc = new Vector2(f_sys).div(sys_LI);	// STEP 4: calc system accelerations
-		final double frame_aacc = tq_sys / sys_RI;
+		// STEP 5: System linear and rotational acceleration
+		final Vector2
+			la_sys = new Vector2(F_sys).div(lI_sys);
+		final double
+			ra_sys = Tq_sys / rI_sys;
 
-		// transform based on heading???
-		State.FrameVelocityX.set(x_prime, frame_acc.x());
-		State.FrameVelocityY.set(x_prime, frame_acc.y());
-		State.FrameAngularVel.set(x_prime, frame_aacc);
+		// STEP 6: Fill x prime
+		for(int i = 0; i < this.SIZE; i++) {
+			final Vector2
+				lan = Vector2
+					.add( la_sys, Vector2.cross( ra_sys, this.module_locs[i] ) )
+					.sub( this.module_locs[i].times( rv_frame * rv_frame ) );
+			State.DriveVelocity.setN( x_prime, i, lan.rotate(-wheel_headings[i]).x() );
+		}
+		State.FrameVelocityX.set(x_prime, la_sys.x());		// transform based on heading???
+		State.FrameVelocityY.set(x_prime, la_sys.y());
+		State.FrameAngularVel.set(x_prime, ra_sys);
 		State.FramePositionX.set(x_prime, lv_frame.x());
 		State.FramePositionY.set(x_prime, lv_frame.y());
-		State.FrameRotation.set(x_prime, av_frame);
-
-		// use kinematics to set wheel accelerations
+		State.FrameRotation.set(x_prime, rv_frame);
 
 		return x_prime;
 

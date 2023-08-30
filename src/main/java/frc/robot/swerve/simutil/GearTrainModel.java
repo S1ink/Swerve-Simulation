@@ -293,6 +293,7 @@ public class GearTrainModel {
 			this._recalc();
 		}
 	}
+	public static GearTrainModel create() { return new GearTrainModel(); }
 
 	private void _recalc() {
 		this.sum_inertia_beg = LinkedNode.sumChainInertia(this.end);
@@ -344,6 +345,18 @@ public class GearTrainModel {
 
 	public int numNodes() {
 		return this.length;
+	}
+	public double fwdRatio() {
+		return this.sum_ratio;
+	}
+	public double revRatio() {
+		return 1.0 / this.sum_ratio;
+	}
+	public double begInertia() {
+		return this.sum_inertia_beg;
+	}
+	public double endInertia() {
+		return this.sum_inertia_end;
 	}
 	/** Find the angular velocity of the last node given the angular velocity of the first node. */
 	public double propegateVel(double a_vel) {

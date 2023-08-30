@@ -42,7 +42,7 @@ public interface SwerveModuleModel {
 	 * as a result of the wheel being pushed/moved sideways.
 	 * 
 	 * @param f_norm - the normal force in N applied at the wheel-floor contact as a result of gravity and possible external forces
-	 * @param f_app - the sum applicant (source) force acting on the wheel in N, orthoganal to the wheel's heading
+	 * @param f_app - the sum applicant (source) force acting on the wheel in N, orthoganal to the wheel's heading (CCW -> +y -> LEFT is positive)
 	 * @param vel_linear - the linear velocity in m/s that the module is traveling in the direction orthoganal to the wheel's heading (CCW -> +y -> LEFT is positive)
 	 * 
 	 * @return the friciton force in N

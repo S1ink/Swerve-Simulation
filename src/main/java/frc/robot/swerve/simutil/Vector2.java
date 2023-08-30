@@ -44,6 +44,10 @@ public class Vector2 extends Vector<N2> {
 		this.set(x() + v.x(), y() + v.y());
 		return this;
 	}
+	public Vector2 sub(Vector2 v) {
+		this.set(x() - v.x(), y() - v.y());
+		return this;
+	}
 	public Vector2 normalize() {
 		final double n = this.norm();
 		this.set(x() / n, y() / n);
@@ -129,7 +133,7 @@ public class Vector2 extends Vector<N2> {
 	public static Vector2 cross(Vector2 v, double z_projection) {
 		return new Vector2(v).cross_CW(z_projection);
 	}
-	public static Vector2 invCross(Vector2 r, double z) {			// perform a cross product but the result is equal to |tq|sin(theta)/|r| not |tq||r|sin(theta) -- used to find a resultant force vector from a given torque and applicant radius vector
+	public static Vector2 invCross(double z, Vector2 r) {	// perform a cross product but the result is equal to |tq|sin(theta)/|r| not |tq||r|sin(theta) -- used to find a resultant force vector from a given torque and applicant radius vector
 		return new Vector2(r).cross(z).div(Vector2.dot(r, r));
 	}
 	public static Vector2 unitVec(Vector2 v) {
@@ -141,10 +145,10 @@ public class Vector2 extends Vector<N2> {
 	public static double cos(Vector2 a, Vector2 b) {
 		return a.cos(b);
 	}
-	public static Vector2 applyFriction(Vector2 f_src, Vector2 momentum, Vector2 f_frict, double dt) {
+	public static Vector2 applyFriction(Vector2 f_app, Vector2 p_sys, Vector2 f_frict, double dt) {
 		return new Vector2(
-			FrictionModel.applyFriction(f_src.x(), momentum.x(), f_frict.x(), dt),
-			FrictionModel.applyFriction(f_src.y(), momentum.y(), f_frict.y(), dt)
+			FrictionModel.applyFriction(f_app.x(), p_sys.x(), f_frict.x(), dt),
+			FrictionModel.applyFriction(f_app.y(), p_sys.y(), f_frict.y(), dt)
 		);
 	}
 
