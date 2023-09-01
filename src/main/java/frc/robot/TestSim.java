@@ -20,7 +20,7 @@ import frc.robot.team3407.Util;
 
 public class TestSim extends CommandBase {
 
-	public static class TestModuleSim implements SwerveModuleModel {
+	public static class TestModuleModel implements SwerveModuleModel {
 
 		private static final double WHEEL_RADIUS = 0.04699;
 		private static final DCMotor
@@ -38,6 +38,8 @@ public class TestSim extends CommandBase {
 				.addDualGear(2e-5, 19, 15)
 				.addGear(4.416e-4, WHEEL_RADIUS, 45);		// the radius is the wheel's radius
 		private static final FrictionModel
+			// steer_motor_frict,	// this is a bit sweaty but is physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
+			// drive_motor_frict = steer_motor_frict = new StribeckFriction(0, 0, 0, 0),
 			steer_gt_frict = new StribeckFriction(0, 0, 0, 0),
 			drive_gt_frict = new StribeckFriction(0, 0, 0, 0),
 			steer_floor_frict = new StribeckFriction(0, 0, 0, 0),
@@ -54,40 +56,53 @@ public class TestSim extends CommandBase {
 		public double steerAAccel(
 			double a_volts, double b_volts,
 			double steer_rate, double wheel_vel_linear,
-			double f_norm
+			double f_norm,
+			double dt
 		) {
 			final double
-				m_av = steer_gt.propegateVelRev(steer_rate),	// turn rate to motor speed via gearing
-				gt_p = steer_gt.endInertia() * steer_rate,
-				o_tq = steer_gt.propegateTq(steer_motor.getTorque(steer_motor.getCurrent(m_av, a_volts))),	// motor torque geared @ output
-				f_tq = steer_gt.sumFrictionRev(steer_rate, o_tq, steer_gt_frict) + steer_floor_frict.calc(f_norm, steer_rate, o_tq),
-				s_tq = FrictionModel.applyFriction(o_tq, gt_p, f_tq, 0.0);
-			return s_tq / STEER_GT_RI;
+			// the motor's rotational rate
+				av_motor = steer_gt.propegateVelRev(steer_rate),
+			// the entire geartrain's momentum @ the output
+				p_gtrain = steer_gt.endInertia() * steer_rate,
+			// the raw torque as result of applied voltage
+				tq_raw = steer_gt.propegateTq(DCMotorModel.getRawTorque(steer_motor, a_volts)),	// motor torque geared @ output
+			// sum of frictions in the geartrain and motor (and back EMF)
+				tq_frict = ( DCMotorModel.getEMFTorque(steer_motor, av_motor)
+					+ steer_gt.sumFrictionRev(steer_rate, tq_raw, steer_gt_frict)
+					+ steer_floor_frict.calc(f_norm, steer_rate, tq_raw) ),
+			// apply friction
+				tq_sum = FrictionModel.applyFriction(tq_raw, p_gtrain, tq_frict, dt);
+			// return net torque (@ output) / inertia of the entire chain (@ output)
+			return tq_sum / STEER_GT_RI;
 
 		}
 		@Override
 		public double wheelForceM(
 			double a_volts, double b_volts,
-			double steer_rate, double wheel_vel_linear
+			double steer_rate, double wheel_vel_linear,
+			double dt
 		) {
-			final double
-				m_av = (wheel_vel_linear / WHEEL_RADIUS) / DRIVE_GT_RATIO,
-				o_tq = drive_motor.getTorque(drive_motor.getCurrent(m_av, b_volts)) / DRIVE_GT_RATIO;
-			return o_tq / WHEEL_RADIUS;
+			return drive_gt.propegateTq(DCMotorModel.getRawTorque(drive_motor, b_volts)) / WHEEL_RADIUS;
 		}
 		@Override
 		public double wheelSideFriction(
-			double f_norm, double f_app, double vel_linear
+			double f_norm, double f_app, double vel_linear, double dt
 		) {
-			return 0.0;
+			return wheel_side_frict.calc(f_norm, vel_linear, f_app);
 		}
 		@Override
 		public double wheelGearFriction(
 			double f_norm, double f_app,
 			double a_volts, double b_volts,
-			double steer_rate, double wheel_vel_linear
+			double steer_rate, double wheel_vel_linear,
+			double dt
 		) {
-			return 0.0;
+			final double
+				av_wheel = wheel_vel_linear / WHEEL_RADIUS,
+				av_motor = drive_gt.propegateVelRev(av_wheel),
+				tq_frict = ( DCMotorModel.getEMFTorque(drive_motor, av_motor)
+					+ drive_gt.sumFrictionRev(av_wheel, f_app * WHEEL_RADIUS, drive_gt_frict) );
+			return tq_frict;
 		}
 		@Override
 		public double moduleMass() {
@@ -101,16 +116,16 @@ public class TestSim extends CommandBase {
 			final double
 				cos = Math.cos(vec_wheel_dtheta),
 				cos2 = cos * cos,
-				IR_l = drive_gt.endInertia() / (WHEEL_RADIUS * WHEEL_RADIUS),
-				IL2 = MODULE_STATIC_LI * MODULE_STATIC_LI;
-			return Math.sqrt(IL2 + (2.0 * MODULE_STATIC_LI + IR_l) * IR_l * cos2);
+				lI_gt = drive_gt.endInertia() / (WHEEL_RADIUS * WHEEL_RADIUS),
+				lI2 = MODULE_STATIC_LI * MODULE_STATIC_LI;
+			return Math.sqrt(lI2 + (2.0 * MODULE_STATIC_LI + lI_gt) * lI_gt * cos2);
 		}
 		@Override
 		public double effectiveRotationalInertia(
 			double vec_wheel_dtheta, double module_radius
 		) {
-			final double LI_v = this.effectiveLinearInertia(vec_wheel_dtheta);
-			return MODULE_STATIC_RI + LI_v * module_radius * module_radius;
+			final double lI_v = this.effectiveLinearInertia(vec_wheel_dtheta);
+			return MODULE_STATIC_RI + lI_v * module_radius * module_radius;
 		}
 
 

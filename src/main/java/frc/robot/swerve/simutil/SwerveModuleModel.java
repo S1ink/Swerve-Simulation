@@ -13,13 +13,15 @@ public interface SwerveModuleModel {
 	 * @param steer_rate - the current angular velocity of the wheel assembly about the steer axis in rad/s
 	 * @param wheel_vel_linear - the linear velocity of the module along the wheel path in m/s
 	 * @param f_norm - the normal force in N applied at the wheel-floor contact as a result of gravity and possible external forces
+	 * @param dt - the external summation timestep in seconds
 	 * 
 	 * @return the angular acceleration of the wheel assembly about the steering axis in rad/s^2
 	 */
 	public double steerAAccel(
 		double a_volts, double b_volts,
 		double steer_rate, double wheel_vel_linear,
-		double f_norm
+		double f_norm,
+		double dt
 	);
 
 
@@ -30,12 +32,14 @@ public interface SwerveModuleModel {
 	 * @param b_volts - the voltage applied to motor B in volts
 	 * @param steer_rate - the angular velocity of the wheel assembly about the steering axis in rad/s
 	 * @param wheel_vel_linear - the linear velocity of the module along the wheel path in m/s
+	 * @param dt - the external summation timestep in seconds
 	 * 
 	 * @return the resulting force applied by the wheel (at the floor) in N
 	 */
 	public double wheelForceM(
 		double a_volts, double b_volts,
-		double steer_rate, double wheel_vel_linear
+		double steer_rate, double wheel_vel_linear,
+		double dt
 	);
 
 	/** Get the friction force in N applied at the wheel-floor contact 
@@ -44,11 +48,13 @@ public interface SwerveModuleModel {
 	 * @param f_norm - the normal force in N applied at the wheel-floor contact as a result of gravity and possible external forces
 	 * @param f_app - the sum applicant (source) force acting on the wheel in N, orthoganal to the wheel's heading (CCW -> +y -> LEFT is positive)
 	 * @param vel_linear - the linear velocity in m/s that the module is traveling in the direction orthoganal to the wheel's heading (CCW -> +y -> LEFT is positive)
+	 * @param dt - the external summation timestep in seconds
 	 * 
 	 * @return the friciton force in N
 	 */
 	public double wheelSideFriction(
-		double f_norm, double f_app, double vel_linear
+		double f_norm, double f_app, double vel_linear,
+		double dt
 	);
 
 	/** Get the friction force in N applied at the wheel radius as a result of the wheel being
@@ -65,7 +71,8 @@ public interface SwerveModuleModel {
 	public double wheelGearFriction(
 		double f_norm, double f_app,
 		double a_volts, double b_volts,
-		double steer_rate, double wheel_vel_linear
+		double steer_rate, double wheel_vel_linear,
+		double dt
 	);
 
 

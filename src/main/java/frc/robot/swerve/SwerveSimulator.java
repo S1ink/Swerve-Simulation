@@ -29,7 +29,6 @@ public class SwerveSimulator implements Sendable {
 		public SimConfig(
 			double robot_mass, double robot_RI
 		) {
-r
 			this.ROBOT_MASS = robot_mass;
 			this.ROBOT_RI = robot_RI;
 		}
@@ -244,8 +243,8 @@ r
 				rv_steer = State.SteerRate.fromN(x, i),
 				lv_wheel = State.DriveVelocity.fromN(x, i),
 			// STEP 1B(xN): Initial module property calculations
-				ra_steer = this.module_models[i].steerAAccel( volts_a, volts_b, rv_steer, lv_wheel, F_norm_z ),
-				F_wheel = this.module_models[i].wheelForceM( volts_a, volts_b, rv_steer, lv_wheel );
+				ra_steer = this.module_models[i].steerAAccel( volts_a, volts_b, rv_steer, lv_wheel, F_norm_z, 0.0 ),
+				F_wheel = this.module_models[i].wheelForceM( volts_a, volts_b, rv_steer, lv_wheel, 0.0 );
 			// STEP 1C(xN): Set applicant output deltas
 			State.SteerAngle.setN(x_prime, i, rv_steer);
 			State.SteerRate.setN(x_prime, i, ra_steer);
@@ -295,9 +294,9 @@ r
 				lv_wheel = State.DriveVelocity.fromN(x, i),
 			// STEP 2C(xN): Calc maximum friction force in each direction via module properties
 				F_inline_frict = this.module_models[i]
-					.wheelGearFriction( F_norm_z, F_para, volts_a, volts_b, rv_steer, lv_wheel ),
+					.wheelGearFriction( F_norm_z, F_para, volts_a, volts_b, rv_steer, lv_wheel, 0.0 ),
 				F_side_frict = this.module_models[i]
-					.wheelSideFriction( F_norm_z, F_poip, lv_poip );
+					.wheelSideFriction( F_norm_z, F_poip, lv_poip, 0.0 );
 			final Vector2
 			// STEP 2D(xN): Combine friction components into a single vector
 				F_frict_n = new Vector2( F_inline_frict, F_side_frict ).rotate( wheel_headings[i] );

@@ -386,7 +386,7 @@ public class GearTrainModel {
 			_v = n.fromPrevAVel(_v);	// new angular velocity and torque acting on the current node
 			_tq = n.fromPrevTq(_tq);
 			tq_scalar *= n.prevTq(1.0);
-			friction += m.calc(1.0, _v, _tq) * tq_scalar;
+			friction += m.calcNormalized(_v, _tq) * tq_scalar;
 			n = n.post;
 		}
 		return friction;
@@ -403,7 +403,7 @@ public class GearTrainModel {
 			_v = n.fromNextAVel(_v);
 			_tq = n.fromNextTq(_tq);
 			tq_scalar *= n.nextTq(1.0);
-			friction += m.calc(1.0, _v, _tq) * tq_scalar;
+			friction += m.calcNormalized(_v, _tq) * tq_scalar;
 			n = n.pre;
 		}
 		return friction;

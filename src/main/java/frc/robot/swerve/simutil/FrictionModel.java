@@ -6,8 +6,14 @@ import frc.robot.team3407.Util;
 /** FrictionModel represents any model of the friction between 2 surfaces. */
 public interface FrictionModel {
 
+	/** The interface can be reused for rotational friction calculations - simply replace f_app with the applied torque and vel with the rotational velocity. */
+
 	/** calculate the maximum applicant friction given the orthogonal force, velocity, and sum independant force */
-	public double calc(double f_norm, double vel, double f_ext);
+	public double calc(double f_norm, double vel, double f_app);
+	/** compute the friction in scenarios where f_norm is always constant or not applicable */
+	default public double calcNormalized(double vel, double f_app) {
+		return this.calc(1.0, vel, f_app);
+	}
 
 
 	/** Sum external forces with a maximum friction component while taking into account the current momentum (friction can only "slow down", not reverse movement)
@@ -36,6 +42,8 @@ public interface FrictionModel {
 			coulomb_coeff,	// the coefficient of kinetic friciton
 			stiction_coeff,	// the coefficient of static friction
 			viscous_coeff;	// the coefficient of viscous friction
+		public double
+			default_norm = 1.0;
 
 		public StribeckFriction(double stb_vel, double static_coeff, double kinetic_coeff, double viscous_coeff) {
 			this.stb_vel = stb_vel;
@@ -50,10 +58,15 @@ public interface FrictionModel {
 			this.viscous_coeff = 0.0;
 		}
 
+		public StribeckFriction applyDefaultFNorm(double f_norm) {
+			this.default_norm = f_norm;
+			return this;
+		}
+
 		@Override
-		public double calc(double f_norm, double vel, double f) {
+		public double calc(double f_norm, double vel, double f_app) {
 			if(vel == 0.0)
-				return stiction_coeff * f_norm * -Math.signum(f);
+				return stiction_coeff * f_norm * -Math.signum(f_app);
 			final double
 				fc = coulomb_coeff * f_norm,
 				fs = stiction_coeff * f_norm,
@@ -61,6 +74,10 @@ public interface FrictionModel {
 				s = Util.sgnnz(vel),
 				c = 1.0 / (1.0 + Math.pow(vel / stb_vel, 2));
 			return (fc + (fs - fc) * c) * -s + fv;
+		}
+		@Override
+		public double calcNormalized(double vel, double f_app) {
+			return this.calc(this.default_norm, vel, f_app);
 		}
 
 
