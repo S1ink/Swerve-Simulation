@@ -68,10 +68,10 @@ public abstract class SwerveModule implements Sendable {
 	public void setSimulatedSteeringAngle(double angle) {}
 	/** Set the simulated steering angular velocity in radians per second */
 	public void setSimulatedSteeringRate(double omega) {}
-	/** Set the simulated wheel displacement in radians */
-	public void setSimulatedWheelPosition(double angle) {}
-	/** Set the simulated wheel velocity in radians per second */
-	public void setSimulatedWheelVelocity(double omega) {}
+	/** Set the simulated wheel displacement in meters */
+	public void setSimulatedWheelPosition(double angle) {}		// LINEAR NOT ANGULAR
+	/** Set the simulated wheel velocity in meters per second */
+	public void setSimulatedWheelVelocity(double omega) {}		// LINEAR NOT ANGULAR
 
 
 	@Override

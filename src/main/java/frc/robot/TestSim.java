@@ -1,12 +1,10 @@
 package frc.robot;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.function.DoubleSupplier;
 
 import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.system.plant.DCMotor;
-import edu.wpi.first.math.system.plant.LinearSystemId;
 import edu.wpi.first.util.sendable.SendableBuilder;
 import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj.Timer;
@@ -21,6 +19,9 @@ import frc.robot.team3407.Util;
 public class TestSim extends CommandBase {
 
 	public static class TestModuleModel implements SwerveModuleModel {
+
+		public static TestModuleModel inst = new TestModuleModel();
+		private TestModuleModel() {}
 
 		private static final double WHEEL_RADIUS = 0.04699;
 		private static final DCMotor
@@ -38,19 +39,20 @@ public class TestSim extends CommandBase {
 				.addDualGear(2e-5, 19, 15)
 				.addGear(4.416e-4, WHEEL_RADIUS, 45);		// the radius is the wheel's radius
 		private static final FrictionModel
-			// steer_motor_frict,	// this is a bit sweaty but is physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
+			// steer_motor_frict,	// this is a bit extra but physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
 			// drive_motor_frict = steer_motor_frict = new StribeckFriction(0, 0, 0, 0),
-			steer_gt_frict = new StribeckFriction(0, 0, 0, 0),
+			steer_gt_frict = new StribeckFriction(0.1, 0.1, 0.05, 0.1),
 			drive_gt_frict = new StribeckFriction(0, 0, 0, 0),
-			steer_floor_frict = new StribeckFriction(0, 0, 0, 0),
+			steer_floor_frict = new StribeckFriction(0.1, 0.1, 0.2, 0),
 			wheel_side_frict = new StribeckFriction(0, 0, 0, 0);
 		private static final double
 			MODULE_STATIC_RI = 0.013,		// about the steer axis, or wherever the module's measured center is
 			MODULE_STATIC_LI = 2.115,
 			STEER_GT_RI = steer_gt.endInertia(),
-			DRIVE_GT_RI = drive_gt.endInertia(),
-			STEER_GT_RATIO = steer_gt.fwdRatio(),	// the FWD ratio -- from motor to output -> use the inverse in reverse operations
-			DRIVE_GT_RATIO = drive_gt.fwdRatio();	// the FWD ratio -- from motor to wheel -> use the inverse in reverse operations
+			DRIVE_GT_RI = drive_gt.endInertia();
+			// STEER_GT_RATIO = steer_gt.fwdRatio(),	// the FWD ratio -- from motor to output -> use the inverse in reverse operations
+			// DRIVE_GT_RATIO = drive_gt.fwdRatio();	// the FWD ratio -- from motor to wheel -> use the inverse in reverse operations
+
 
 		@Override
 		public double steerAAccel(
@@ -116,7 +118,7 @@ public class TestSim extends CommandBase {
 			final double
 				cos = Math.cos(vec_wheel_dtheta),
 				cos2 = cos * cos,
-				lI_gt = drive_gt.endInertia() / (WHEEL_RADIUS * WHEEL_RADIUS),
+				lI_gt = DRIVE_GT_RI / (WHEEL_RADIUS * WHEEL_RADIUS),
 				lI2 = MODULE_STATIC_LI * MODULE_STATIC_LI;
 			return Math.sqrt(lI2 + (2.0 * MODULE_STATIC_LI + lI_gt) * lI_gt * cos2);
 		}
@@ -132,8 +134,15 @@ public class TestSim extends CommandBase {
 	}
 	public static class TestModule extends SwerveModule {
 
-		public TestModule() {
-			super(null);
+		private double va, vb;
+
+		public TestModule(Translation2d location) {
+			super(location);
+		}
+
+		public synchronized void setVoltage(double steer_volts, double drive_volts) {
+			this.va = steer_volts;
+			this.vb = drive_volts;
 		}
 
 		@Override
@@ -143,9 +152,11 @@ public class TestSim extends CommandBase {
 		@Override
 		public double getWheelDisplacement() { return 0.0; }
 		@Override
-		public double getMotorAVolts() { return 0.0; }
+		public double getMotorAVolts() { return this.va; }
 		@Override
-		public double getMotorBVolts() { return 0.0; }
+		public double getMotorBVolts() { return this.vb; }
+		@Override
+		public SwerveModuleModel getSimProperties() { return TestModuleModel.inst; }
 		@Override
 		public void setSimulatedSteeringAngle(double angle) {}
 		@Override
@@ -158,21 +169,36 @@ public class TestSim extends CommandBase {
 
 	}
 
+
+
+	/** INSTANCE MEMBERS */
+
+	private static final SwerveSimulator.SimConfig
+		SIM_CONFIG = new SwerveSimulator.SimConfig(10.0, 5.0);
+
+	private final TestModule[] modules;
+	private final SwerveKinematics kinematics;
+	private final SwerveVisualization visualization;
+	private final SwerveSimulator simulator;
+
 	private final DoubleSupplier x_speed, y_speed, turn_speed;	// in meters per second and degrees per second
 	private Pose2d robot_pose2d = new Pose2d();
 	private Timer timer = new Timer();
 	private ChassisStates robot_vec = new ChassisStates();
 
-	private SwerveKinematics kinematics;
-	private SwerveVisualization visualization;
 	private SwerveModuleStates[] wheel_states = new SwerveModuleStates[4];
 
 	public TestSim(
 		DoubleSupplier xspeed, DoubleSupplier yspeed, DoubleSupplier trnspeed,
 		Translation2d... modules
 	) {
+		this.modules = new TestModule[modules.length];
+		for(int i = 0; i < this.modules.length; i++) {
+			this.modules[i] = new TestModule(modules[i]);
+		}
 		this.kinematics = new SwerveKinematics(modules);
 		this.visualization = new SwerveVisualization(modules);
+		this.simulator = new SwerveSimulator(this.visualization, SIM_CONFIG, TestModuleModel.inst, this.modules);
 
 		this.x_speed = xspeed;
 		this.y_speed = yspeed;
@@ -181,33 +207,43 @@ public class TestSim extends CommandBase {
 		Arrays.fill(this.wheel_states, new SwerveModuleStates());
 	}
 
+
+	public SwerveSimulator getSim() { return this.simulator; }
+
 	@Override
 	public void initialize() {
-		this.robot_vec = new ChassisStates();
-		this.timer.reset();
-		this.timer.start();
+		// this.robot_vec = new ChassisStates();
+		// this.timer.reset();
+		// this.timer.start();
 	}
 
 	@Override
 	public void execute() {
 
-		final double dt = this.timer.get();
-		this.timer.reset();
-		this.timer.start();
+		// final double dt = this.timer.get();
+		// this.timer.reset();
+		// this.timer.start();
+
+		// final double
+		// 	vx = x_speed.getAsDouble(),
+		// 	vy = y_speed.getAsDouble(),
+		// 	vtheta = turn_speed.getAsDouble();
+
+		// ChassisStates.accFromDelta(this.robot_vec, new ChassisStates(vx, vy, vtheta), dt, this.robot_vec);
+		// this.wheel_states = this.kinematics.toModuleStates(this.robot_vec);
+
+		// this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(
+		// 	this.robot_vec.x_velocity * dt,
+		// 	this.robot_vec.y_velocity * dt,
+		// 	this.robot_vec.angular_velocity * dt
+		// ));
 
 		final double
-			vx = x_speed.getAsDouble(),
-			vy = y_speed.getAsDouble(),
-			vtheta = turn_speed.getAsDouble();
-
-		ChassisStates.accFromDelta(this.robot_vec, new ChassisStates(vx, vy, vtheta), dt, this.robot_vec);
-		this.wheel_states = this.kinematics.toModuleStates(this.robot_vec);
-
-		this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(
-			this.robot_vec.x_velocity * dt,
-			this.robot_vec.y_velocity * dt,
-			this.robot_vec.angular_velocity * dt
-		));
+			vturn = this.turn_speed.getAsDouble(),
+			vfwd = this.x_speed.getAsDouble();
+		for(TestModule m : this.modules) {
+			m.setVoltage(vturn, vfwd);
+		}
 
 	}
 
@@ -218,14 +254,16 @@ public class TestSim extends CommandBase {
 	
 	@Override
 	public void end(boolean i) {
-		
+		for(TestModule m : this.modules) {
+			m.setVoltage(0.0, 0.0);
+		}
 	}
 
 	@Override
 	public void initSendable(SendableBuilder builder) {
-		builder.addDoubleArrayProperty("Robot Pose", ()->Util.toComponents2d(this.robot_pose2d), null);
-		builder.addDoubleArrayProperty("Wheel Poses", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.wheel_states)), null);
-		builder.addDoubleArrayProperty("Wheel Vectors", ()->SwerveVisualization.getVecComponents2d(this.wheel_states), null);
+		// builder.addDoubleArrayProperty("Robot Pose", ()->Util.toComponents2d(this.robot_pose2d), null);
+		// builder.addDoubleArrayProperty("Wheel Poses", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.wheel_states)), null);
+		// builder.addDoubleArrayProperty("Wheel Vectors", ()->SwerveVisualization.getVecComponents2d(this.wheel_states), null);
 	}
 
 }

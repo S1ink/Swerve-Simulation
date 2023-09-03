@@ -9,14 +9,16 @@ import frc.robot.team3407.controls.ControlSchemeManager;
 import frc.robot.team3407.controls.Input.*;
 import frc.robot.team3407.SenderNT;
 import frc.robot.team3407.Util;
-import frc.robot.swerve.SwerveUtils;
+import frc.robot.swerve.*;
 
 
 public class Robot extends TimedRobot {
 
 	private final ControlSchemeManager controls = new ControlSchemeManager();
 	private final EventLoop eloop = new EventLoop();
-	private final SenderNT robot_nt = new SenderNT("Robot");
+	private final SenderNT
+		robot_nt = new SenderNT("Robot"),
+		sim_nt = new SenderNT("Sim Data");
 
 
 	@Override
@@ -24,18 +26,22 @@ public class Robot extends TimedRobot {
 
 		this.controls.setAmbiguousSolution(ControlSchemeManager.AmbiguousSolution.PREFER_COMPLEX);
 		this.controls.setDefault("Xbox Sim Drive", (InputDevice... inputs)->{
-			InputDevice xbox = inputs[0];
+			final InputDevice xbox = inputs[0];
+			TestSim t;
 			TeleopTrigger.makeWithLoop(this.eloop).onTrue(
 				Util.send(
-					new TestSim(
+					(t = new TestSim(
 						Xbox.Analog.RY.getDriveInputSupplier(xbox, 0.05, -4.0, 1.0),
 						Xbox.Analog.RX.getDriveInputSupplier(xbox, 0.05, -4.0, 1.0),
 						Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -3.0, 1.0),
 						SwerveUtils.makeSquareLocationsCW(0.263525)
-					),
+					)),
 					this.robot_nt, "Test Sim"
 				)
 			);
+			this.sim_nt.putData("Test Simulation", t.getSim());
+			this.addPeriodic(()->t.getSim().integrate(0.005), 0.005);	// might be an issue if t gets deleted?
+			this.addPeriodic(this.sim_nt::updateValues, 0.005);
 		}, this.eloop::clear, Xbox.Map);
 
 		this.addPeriodic(

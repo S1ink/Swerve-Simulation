@@ -3,10 +3,10 @@ package frc.robot.swerve.simutil;
 import edu.wpi.first.math.system.plant.DCMotor;
 
 
-/** DCMotorModel provides extension functions to the {@link DCMotor} class (currently only static) */
+/** DCMotorModel provides extension functions to the {@link DCMotor} class (although these are currently only static) */
 public class DCMotorModel {
 
-	/** The sum of getRawTorque(m, ...) and getEMFTorque(m, ...) should equal that of m.getTorque(m.getCurrent(...)) */
+	/** NOTE: The sum of getRawTorque(m, ...) and getEMFTorque(m, ...) should equal that of m.getTorque(m.getCurrent(...)) */
 
 	/** Get the component of the total motor torque that is directly resultant of the voltage applied. */
 	public static double getRawTorque(DCMotor m, double volts) {
@@ -17,6 +17,7 @@ public class DCMotorModel {
 		return m.KtNMPerAmp * (-r_vel / (m.KvRadPerSecPerVolt * m.rOhms));
 	}
 
+	/** Get the sum frictional torque acting on the motor's rotation given a frictional model */
 	public static double getFrictionalTorque(DCMotor m, FrictionModel f, double r_vel, double tq_app) {
 		return f.calcNormalized(r_vel, tq_app) + getEMFTorque(m, r_vel);
 	}
