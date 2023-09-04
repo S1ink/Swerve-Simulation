@@ -112,6 +112,9 @@ public class Vector2 extends Vector<N2> {
 	public static Vector2 sub(Vector2 a, Vector2 b) {
 		return new Vector2(a.x() - b.x(), a.y() - b.y());
 	}
+	public static Vector2 mult(Vector2 a, double s) {
+		return new Vector2(a.x() * s, a.y() * s);
+	}
 	public static Vector2 fromPolar(double mag, double radians) {
 		return new Vector2(mag * Math.cos(radians), mag * Math.sin(radians));
 	}

@@ -42,9 +42,9 @@ public class TestSim extends CommandBase {
 			// steer_motor_frict,	// this is a bit extra but physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
 			// drive_motor_frict = steer_motor_frict = new StribeckFriction(0, 0, 0, 0),
 			steer_gt_frict = new StribeckFriction(0.1, 0.1, 0.05, 0.1),
-			drive_gt_frict = new StribeckFriction(0, 0, 0, 0),
+			drive_gt_frict = new StribeckFriction(0.1, 0.1, 0.05, 0.1),
 			steer_floor_frict = new StribeckFriction(0.1, 0.1, 0.2, 0),
-			wheel_side_frict = new StribeckFriction(0, 0, 0, 0);
+			wheel_side_frict = new StribeckFriction(0, 0.3, 0.2, 0);
 		private static final double
 			MODULE_STATIC_RI = 0.013,		// about the steer axis, or wherever the module's measured center is
 			MODULE_STATIC_LI = 2.115,

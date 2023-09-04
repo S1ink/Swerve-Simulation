@@ -1,5 +1,6 @@
 package frc.robot.swerve;
 
+import java.util.ArrayList;
 import java.util.function.BiFunction;
 
 import edu.wpi.first.math.system.NumericalIntegration;
@@ -53,12 +54,23 @@ public class SwerveSimulator implements Sendable {
 	public static interface DynamicsDT_F<States extends Num, Inputs extends Num> {
 		public Matrix<States, N1> sample(Matrix<States, N1> x, Matrix<Inputs, N1> u, double dt);
 	}
+	/** An interface to match the DEBUG dynamics sampler (with dt param). */
+	public static interface DynamicsDTd_F<States extends Num, Inputs extends Num> {
+		public Matrix<States, N1> sample(Matrix<States, N1> x, Matrix<Inputs, N1> u, double dt, ArrayList<double[]> debug);
+	}
 	/** Generate a lambda function that wraps the dynamics with a specified dt param. */
-	public static<States extends Num, Inputs extends Num>
+	public static <States extends Num, Inputs extends Num>
 		BiFunction< Matrix<States, N1>, Matrix<Inputs, N1>, Matrix<States, N1> >
 			genWrapper(DynamicsDT_F<States, Inputs> f, double dt)
 	{
 		return (Matrix<States, N1> _x, Matrix<Inputs, N1> _u)->{ return f.sample(_x, _u, dt); };
+	}
+	/** Generate a lambda function that wraps the DEBUG dynamics with a specified dt param and attaches the debug array. */
+	public static <States extends Num, Inputs extends Num>
+		BiFunction< Matrix<States, N1>, Matrix<Inputs, N1>, Matrix<States, N1> >
+			genDebugWrapper(DynamicsDTd_F<States, Inputs> f_d, double dt, ArrayList<double[]> debug)
+	{
+		return (Matrix<States, N1> _x, Matrix<Inputs, N1> _u)->{ return f_d.sample(_x, _u, dt, debug); };
 	}
 
 	/** All the states present in the states matrix along with helper methods for manipulating the matrix data. */
@@ -141,6 +153,8 @@ public class SwerveSimulator implements Sendable {
 
 	private final Matrix<NX, N1> u_inputs;
 	private Matrix<NX, N1> x_states, y_outputs;
+	private ArrayList<double[]> debug_buff = new ArrayList<>();
+	private double[] last_debug = new double[29];
 
 
 	public SwerveSimulator(SimConfig config, SwerveModule... modules) {
@@ -208,6 +222,19 @@ public class SwerveSimulator implements Sendable {
 			genWrapper(this::dynamics, dt_seconds), this.x_states, this.u_inputs, dt_seconds);
 		this.y_outputs = x_states.copy();
 	}
+	/** Run a single iteration of numerical integration on the simulation dynamics -- with debugging output. */
+	public synchronized void integrate_D(double dt_seconds) {
+		for(int i = 0; i < this.SIZE; i++) {
+			this.u_inputs.set(i * 2 + 0, 0, this.modules[i].getMotorAVolts());
+			this.u_inputs.set(i * 2 + 1, 0, this.modules[i].getMotorBVolts());
+		}
+		this.x_states = NumericalIntegration.rk4(
+			genDebugWrapper(this::dynamics, dt_seconds, this.debug_buff), this.x_states, this.u_inputs, dt_seconds);
+		this.y_outputs = x_states.copy();
+		// this.last_debug = this.debug_buff.get(this.debug_buff.size() - 1);
+		this.last_debug = this.debug_buff.get(0);
+		this.debug_buff.clear();
+	}
 	/** Update each module's feedback data. */
 	public synchronized void updateSimHW() {
 		for(int i = 0; i < this.SIZE; i++) {
@@ -220,8 +247,10 @@ public class SwerveSimulator implements Sendable {
 		this.updateSimHW();
 	}
 
+	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds)
+		{ return this.dynamics(x, u, dt_seconds, null); }
 	/** The simulation dynamics. Given a state, input, and timestep, compute the change in state. */
-	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds) {
+	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds, ArrayList<double[]> debug) {
 
 		/** A note on 'physically quantitative' variable names:
 		 * PREFIXES {r, l}:
@@ -369,7 +398,7 @@ public class SwerveSimulator implements Sendable {
 			final Vector2
 				laN = Vector2	// the linear acceleration in frame coord space
 					.add( la_sys, Vector2.cross( ra_sys, this.module_locs[i] ) )	// the component of acceleration from adding linear and angular static -- frame coord sys operations
-					.sub( this.module_locs[i].times( rv_frame * rv_frame ) );		// the component from centripetal due to angular velocity -- frame coord sys because normalized to module_locs[]
+					.sub( Vector2.mult( this.module_locs[i], (rv_frame * rv_frame) ) );		// the component from centripetal due to angular velocity -- frame coord sys because normalized to module_locs[]
 			State.DriveVelocity.setN( x_prime, i, laN.rotate(-wheel_headings[i]).x() );		// <-- rotate the vector to be in wheel/module reference and take the x(fwd) component as the wheel's acceleration
 		}
 		// STEP 6B: Convert linear acceleration from frame reference back to field reference because we want to keep track of the robot relative to the field, not relative to itself
@@ -383,6 +412,35 @@ public class SwerveSimulator implements Sendable {
 		State.FramePositionY.set(x_prime, lv_field.y());
 		State.FrameRotation.set(x_prime, rv_frame);			// delta rotation (absolute ref)
 
+		// STEP 7: Load debug array
+		if(debug != null) {
+			final double[]
+				vals = new double[] {
+					F_app.x(), F_app.y(),
+					F_frict.x(), F_frict.y(),
+					Tq_app,
+					Tq_frict,
+					lI_momentum,
+					rI_momentum,
+					rx_frame,
+					rv_frame,
+					lv_field.x(), lv_field.y(),
+					lv_frame.x(), lv_frame.y(),
+					rx_frame_lv,
+					lP_sys.x(), lP_sys.y(),
+					rP_sys,
+					F_sys.x(), F_sys.y(),
+					Tq_sys,
+					ax_f_sys,
+					lI_sys,
+					rI_sys,
+					la_sys.x(), la_sys.y(),
+					ra_sys,
+					la_field.x(), la_field.y()	// 29 fields
+				};
+			debug.add(vals);
+		}
+
 		return x_prime;
 
 	}
@@ -392,16 +450,73 @@ public class SwerveSimulator implements Sendable {
 	@Override
 	public void initSendable(SendableBuilder b) {
 		b.addDoubleArrayProperty("State Data", ()->this.y_outputs.getData(), null);
-		// b.addDoubleArrayProperty("Robot Pose",
-		// 	()->new double[]{
-		// 		State.FramePositionX.from(this.y_outputs),
-		// 		State.FramePositionY.from(this.y_outputs),
-		// 		State.FrameRotation.from(this.y_outputs)
-		// 	}, null);
 		b.addDoubleArrayProperty("Robot Pose",
-			()->Util.toComponents2d( new Pose2d() ), null);
+			()->new double[]{
+				State.FramePositionX.from(this.y_outputs),
+				State.FramePositionY.from(this.y_outputs),
+				State.FrameRotation.from(this.y_outputs)
+			}, null);
+		// b.addDoubleArrayProperty("Robot Pose",
+		// 	()->Util.toComponents2d( new Pose2d() ), null);
 		b.addDoubleArrayProperty("Wheel Poses",
 			()->Util.toComponents3d( this.visualization.getWheelPoses3d( this.getWheelRotations() ) ), null);
+
+		b.addDoubleProperty("Applied Torque",				()->this.last_debug[4], null);
+		b.addDoubleProperty("Frictional Torque",			()->this.last_debug[5], null);
+		b.addDoubleProperty("Linear Inertia (P-pass)",		()->this.last_debug[6], null);
+		b.addDoubleProperty("Rotational Inertia (P-pass)",	()->this.last_debug[7], null);
+		b.addDoubleProperty("Frame Ref Angle",				()->this.last_debug[8], null);
+		b.addDoubleProperty("Frame Angular Vel",			()->this.last_debug[9], null);
+		b.addDoubleProperty("Frame Velocity Direction",	()->this.last_debug[14], null);
+		b.addDoubleProperty("Angular Momentum",			()->this.last_debug[17], null);
+		b.addDoubleProperty("Net Torque",					()->this.last_debug[20], null);
+		b.addDoubleProperty("Net Force Direction",			()->this.last_debug[21], null);
+		b.addDoubleProperty("Linear Inertia (F-pass)",		()->this.last_debug[22], null);
+		b.addDoubleProperty("Rotational Inertia (F-pass)",	()->this.last_debug[23], null);
+		b.addDoubleProperty("Rotational Acceleration",		()->this.last_debug[26], null);
+		b.addDoubleArrayProperty("Net Applied Force",		()->new double[]{ this.last_debug[0], this.last_debug[1] }, null);
+		b.addDoubleArrayProperty("Net Friction",			()->new double[]{ this.last_debug[2], this.last_debug[3] }, null);
+		b.addDoubleArrayProperty("Field Velocity",			()->new double[]{ this.last_debug[10], this.last_debug[11] }, null);
+		b.addDoubleArrayProperty("Frame Velocity",			()->new double[]{ this.last_debug[12], this.last_debug[13] }, null);
+		b.addDoubleArrayProperty("Linear Momentum",		()->new double[]{ this.last_debug[15], this.last_debug[16] }, null);
+		b.addDoubleArrayProperty("Net Summed Force",		()->new double[]{ this.last_debug[18], this.last_debug[19] }, null);
+		b.addDoubleArrayProperty("Net Frame Acceleration",	()->new double[]{ this.last_debug[24], this.last_debug[25] }, null);
+		b.addDoubleArrayProperty("Net Field Acceleration",	()->new double[]{ this.last_debug[27], this.last_debug[28] }, null);
+
+		b.addIntegerProperty("Debug Buffer Size", ()->this.debug_buff.size(), null);
+	}
+
+	@Override
+	public String toString() {
+		final Matrix<NX, N1> vec = this.y_outputs;
+		String s = String.format(
+			"Swerve Simulation State -->\n" +
+			"Frame Position: <%.2f, %.2f>m\n" +
+			"Frame Velocity: <%.2f, %.2f>m\n" +
+			"Frame Rotations: %.2f rad\n" +
+			"Frame Turn Rate: %.2f rad/s\n",
+			State.FramePositionX.from(vec),
+			State.FramePositionY.from(vec),
+			State.FrameVelocityX.from(vec),
+			State.FrameVelocityY.from(vec),
+			State.FrameRotation.from(vec),
+			State.FrameAngularVel.from(vec)
+		);
+		for(int i = 0; i < this.SIZE; i++) {
+			s += String.format(
+				"Module #[%d] -->\n" +
+				"\tSteer Angle: %.2f rad\n" +
+				"\tSteer Rate: %.2f rad/s\n" +
+				"\tWheel Displacement: %.2f m\n" +
+				"\tWheel Velocity: %.2f m/s\n",
+				i,
+				State.SteerAngle.fromN(vec, i),
+				State.SteerRate.fromN(vec, i),
+				State.DrivePosition.fromN(vec, i),
+				State.DriveVelocity.fromN(vec, i)
+			);
+		}
+		return s;
 	}
 
 

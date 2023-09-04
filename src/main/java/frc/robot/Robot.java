@@ -1,5 +1,9 @@
 package frc.robot;
 
+import java.io.File;
+import javax.swing.filechooser.FileSystemView;
+
+import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.event.EventLoop;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
@@ -40,14 +44,24 @@ public class Robot extends TimedRobot {
 				)
 			);
 			this.sim_nt.putData("Test Simulation", t.getSim());
-			this.addPeriodic(()->t.getSim().integrate(0.005), 0.005);	// might be an issue if t gets deleted?
-			this.addPeriodic(this.sim_nt::updateValues, 0.005);
+			this.addPeriodic(()->{
+					t.getSim().integrate_D(0.005);
+					this.sim_nt.updateValues();
+				}, 0.005);
+			// this.addPeriodic(()->System.out.println(t.getSim()), 5.0);
 		}, this.eloop::clear, Xbox.Map);
 
 		this.addPeriodic(
 			this.controls.genLoopableRunContinuous(),
 			0.5
 		);
+
+		File docs_dir = new File(FileSystemView.getFileSystemView().getDefaultDirectory(), "Robot Simulation Logs");
+		if(docs_dir.exists()) {
+			DataLogManager.start(docs_dir.getPath());
+		} else {
+			DataLogManager.start("logs/sim");
+		}
 
 	}
 	@Override
