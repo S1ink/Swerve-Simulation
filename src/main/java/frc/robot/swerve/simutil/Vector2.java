@@ -49,7 +49,7 @@ public class Vector2 extends Vector<N2> {
 		return this;
 	}
 	public Vector2 normalize() {
-		final double n = this.norm();
+		final double n = this.length();
 		this.set(x() / n, y() / n);
 		return this;
 	}
@@ -90,14 +90,14 @@ public class Vector2 extends Vector<N2> {
 		this.set(z_projection * this.y(), -z_projection * this.x());
 		return this;
 	}
-	public double norm() {
+	public double length() {
 		return Math.sqrt(this.dot(this));
 	}
 	public double sin(Vector2 v) {
-		return this.cross(v) / (this.norm() * v.norm());
+		return this.cross(v) / (this.length() * v.length());
 	}
 	public double cos(Vector2 v) {
-		return this.dot(v) / (this.norm() * v.norm());
+		return this.dot(v) / (this.length() * v.length());
 	}
 	public double theta() {
 		return Math.atan2(y(), x());
@@ -149,10 +149,18 @@ public class Vector2 extends Vector<N2> {
 		return a.cos(b);
 	}
 	public static Vector2 applyFriction(Vector2 f_app, Vector2 p_sys, Vector2 f_frict, double dt) {
-		return new Vector2(
-			FrictionModel.applyFriction(f_app.x(), p_sys.x(), f_frict.x(), dt),
-			FrictionModel.applyFriction(f_app.y(), p_sys.y(), f_frict.y(), dt)
-		);
+		final double
+			offset = f_app.theta(),
+			f_app_mag = f_app.length(),
+			sin = Math.sin(-offset),
+			cos = Math.cos(-offset),
+			p_para = p_sys.x() * cos - p_sys.y() * sin,
+			p_poip = p_sys.x() * sin + p_sys.y() * cos,
+			fr_para = f_frict.x() * cos - f_frict.y() * sin,
+			fr_poip = f_frict.x() * sin + f_frict.y() * cos,
+			net_para = FrictionModel.applyFriction(f_app_mag, p_para, fr_para, dt),
+			net_poip = FrictionModel.applyFriction(0.0, p_poip, fr_poip, dt);
+		return new Vector2(net_para, net_poip).rotate(offset);
 	}
 
 	public static Matrix<N2, N2> rmat(double radians) {

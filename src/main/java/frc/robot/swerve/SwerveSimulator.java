@@ -280,7 +280,8 @@ public class SwerveSimulator implements Sendable {
 			F_app = new Vector2(),
 			F_frict = new Vector2();
 		final double[]
-			wheel_headings = new double[this.SIZE];
+			wheel_headings = new double[this.SIZE],
+			wheel_velocities = new double[this.SIZE];
 		double
 			Tq_app = 0.0,
 			Tq_frict = 0.0,
@@ -307,7 +308,8 @@ public class SwerveSimulator implements Sendable {
 				volts_b = u.get(i * 2 + 1, 0),
 				rx_steer = State.SteerAngle.fromN(x, i) % PI2,		// the steer angle in the frames's coordinate system
 				rv_steer = State.SteerRate.fromN(x, i),				// the steer rate from the frame's reference
-				lv_wheel = State.DriveVelocity.fromN(x, i),			// the linear velocity of the module from the module's reference
+				// lv_wheel = State.DriveVelocity.fromN(x, i),			// the linear velocity of the module from the module's reference
+				lv_wheel = Vector2.add( lv_frame, Vector2.cross( rv_frame, this.module_locs[i] ) ).rotate(-rx_steer).x(),	// ^ compute based on frame velocity for better results
 			// STEP 1B(xN): Initial module property calculations
 				ra_steer = this.module_models[i].steerAAccel( volts_a, volts_b, rv_steer, lv_wheel, F_norm_z, dt_seconds ),
 				F_wheel = this.module_models[i].wheelForceM( volts_a, volts_b, rv_steer, lv_wheel, dt_seconds );
@@ -323,6 +325,7 @@ public class SwerveSimulator implements Sendable {
 			F_app.append(F_wheel_2d);
 			Tq_app += this.module_locs[i].cross(F_wheel_2d);				// the cross product takes place in the frame's coordinate system
 			wheel_headings[i] = rx_steer;
+			wheel_velocities[i] = lv_wheel;
 			// STEP 1F(xN): Sum the system's linear and rotational momentum based on the direction of these velocities (includes wheel geartrain inertia)
 			lI_momentum += this.module_models[i].effectiveLinearInertia( (rx_frame_lv - rx_steer) );	// <-- the difference occurs in the frame coordinate system
 			rI_momentum += this.module_models[i].effectiveRotationalInertia(
@@ -357,7 +360,7 @@ public class SwerveSimulator implements Sendable {
 				volts_a = u.get(i * 2, 0),
 				volts_b = u.get(i * 2 + 1, 0),
 				rv_steer = State.SteerRate.fromN(x, i),
-				lv_wheel = State.DriveVelocity.fromN(x, i),
+				lv_wheel = wheel_velocities[i],
 			// STEP 2C(xN): Calc maximum friction force in each direction via module properties
 				F_inline_frict = this.module_models[i]
 					.wheelGearFriction( F_norm_z, F_para, volts_a, volts_b, rv_steer, lv_wheel, dt_seconds ),
@@ -374,7 +377,7 @@ public class SwerveSimulator implements Sendable {
 		// STEP 3: Sum the applicant and friction force/torque such that the momentum does not change direction because of friction
 		final Vector2
 			F_sys = Vector2.applyFriction( F_app, lP_sys, F_frict, dt_seconds );	// the net linear force vector in frame coord space
-		final double
+		final double	// ^ need to change this. friction should only be applied in 1D at the direction of net force, all side components don't mean
 			Tq_sys = FrictionModel.applyFriction( Tq_app, rP_sys, Tq_frict, dt_seconds ),
 			ax_f_sys = F_sys.theta();		// the angle of net linear force in frame coord space
 		// STEP 4: Sum the system inertias based on the direction of net force/torque

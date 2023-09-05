@@ -41,10 +41,10 @@ public class TestSim extends CommandBase {
 		private static final FrictionModel
 			// steer_motor_frict,	// this is a bit extra but physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
 			// drive_motor_frict = steer_motor_frict = new StribeckFriction(0, 0, 0, 0),
-			steer_gt_frict = new StribeckFriction(0.1, 0.1, 0.05, 0.1),
-			drive_gt_frict = new StribeckFriction(0.1, 0.1, 0.05, 0.1),
-			steer_floor_frict = new StribeckFriction(0.1, 0.1, 0.2, 0),
-			wheel_side_frict = new StribeckFriction(0, 0.3, 0.2, 0);
+			steer_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.02),
+			drive_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.02),
+			steer_floor_frict = new StribeckFriction(0.1, 0.05, 0.02, 0),
+			wheel_side_frict = new StribeckFriction(0.1, 0.3, 0.2, 0);
 		private static final double
 			MODULE_STATIC_RI = 0.013,		// about the steer axis, or wherever the module's measured center is
 			MODULE_STATIC_LI = 2.115,
@@ -146,7 +146,10 @@ public class TestSim extends CommandBase {
 		}
 
 		@Override
-		public void setState(double linear_vel, double steer_angle_rad, double linear_acc, double steer_angular_vel) {}
+		public void setState(double linear_vel, double steer_angle_rad, double linear_acc, double steer_angular_vel) {
+			this.va = steer_angular_vel;
+			this.vb = linear_vel;
+		}
 		@Override
 		public double getSteeringAngle() { return 0.0; }
 		@Override
@@ -186,7 +189,7 @@ public class TestSim extends CommandBase {
 	private Timer timer = new Timer();
 	private ChassisStates robot_vec = new ChassisStates();
 
-	private SwerveModuleStates[] wheel_states = new SwerveModuleStates[4];
+	private SwerveModuleStates[] wheel_states;
 
 	public TestSim(
 		DoubleSupplier xspeed, DoubleSupplier yspeed, DoubleSupplier trnspeed,
@@ -204,6 +207,7 @@ public class TestSim extends CommandBase {
 		this.y_speed = yspeed;
 		this.turn_speed = trnspeed;
 
+		this.wheel_states = new SwerveModuleStates[this.modules.length];
 		Arrays.fill(this.wheel_states, new SwerveModuleStates());
 	}
 
@@ -212,38 +216,37 @@ public class TestSim extends CommandBase {
 
 	@Override
 	public void initialize() {
-		// this.robot_vec = new ChassisStates();
-		// this.timer.reset();
-		// this.timer.start();
+		this.robot_vec = new ChassisStates();
+		this.timer.reset();
+		this.timer.start();
 	}
 
 	@Override
 	public void execute() {
 
-		// final double dt = this.timer.get();
-		// this.timer.reset();
-		// this.timer.start();
-
-		// final double
-		// 	vx = x_speed.getAsDouble(),
-		// 	vy = y_speed.getAsDouble(),
-		// 	vtheta = turn_speed.getAsDouble();
-
-		// ChassisStates.accFromDelta(this.robot_vec, new ChassisStates(vx, vy, vtheta), dt, this.robot_vec);
-		// this.wheel_states = this.kinematics.toModuleStates(this.robot_vec);
-
-		// this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(
-		// 	this.robot_vec.x_velocity * dt,
-		// 	this.robot_vec.y_velocity * dt,
-		// 	this.robot_vec.angular_velocity * dt
-		// ));
+		final double dt = this.timer.get();
+		this.timer.reset();
+		this.timer.start();
 
 		final double
-			vturn = this.turn_speed.getAsDouble(),
-			vfwd = this.x_speed.getAsDouble();
-		for(TestModule m : this.modules) {
-			m.setVoltage(vturn, vfwd);
-		}
+			vx = x_speed.getAsDouble(),
+			vy = y_speed.getAsDouble(),
+			vtheta = turn_speed.getAsDouble();
+
+		ChassisStates.accFromDelta(this.robot_vec, new ChassisStates(vx, vy, vtheta), dt, this.robot_vec);
+		this.wheel_states = this.kinematics.toModuleStates(this.robot_vec);
+
+		this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(
+			this.robot_vec.x_velocity * dt,
+			this.robot_vec.y_velocity * dt,
+			this.robot_vec.angular_velocity * dt
+		));
+
+		// for(int i = 0; i < this.modules.length; i++) {
+		// 	this.modules[i].setState(this.wheel_states[i]);
+		// }
+		this.modules[0].setVoltage(vy, vx);
+		this.modules[1].setVoltage(vtheta, vx);
 
 	}
 
@@ -261,9 +264,11 @@ public class TestSim extends CommandBase {
 
 	@Override
 	public void initSendable(SendableBuilder builder) {
-		// builder.addDoubleArrayProperty("Robot Pose", ()->Util.toComponents2d(this.robot_pose2d), null);
-		// builder.addDoubleArrayProperty("Wheel Poses", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.wheel_states)), null);
-		// builder.addDoubleArrayProperty("Wheel Vectors", ()->SwerveVisualization.getVecComponents2d(this.wheel_states), null);
+		// builder.addDoubleProperty("A Volts", this.turn_speed, null);
+		// builder.addDoubleProperty("B Volts", this.x_speed, null);
+		builder.addDoubleArrayProperty("Robot Pose", ()->Util.toComponents2d(this.robot_pose2d), null);
+		builder.addDoubleArrayProperty("Wheel Poses", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.wheel_states)), null);
+		builder.addDoubleArrayProperty("Wheel Vectors", ()->SwerveVisualization.getVecComponents2d(this.wheel_states), null);
 	}
 
 }
