@@ -184,10 +184,11 @@ public final class SwerveUtils {
 
 
 		public <T> Pose3d[] getWheelPoses3d(Function<T, Rotation2d> extractor_f, T... states) {
-			final Pose3d[] poses = new Pose3d[states.length];
-			for(int i = 0; (i < states.length && i < MODULE_LOCATIONS_3D.length); i++) {
+			final int len = Math.min(states.length, this.MODULE_LOCATIONS_3D.length);
+			final Pose3d[] poses = new Pose3d[len];
+			for(int i = 0; i < len; i++) {
 				poses[i] = new Pose3d(
-					MODULE_LOCATIONS_3D[i],
+					this.MODULE_LOCATIONS_3D[i],
 					new Rotation3d(0, 0, extractor_f.apply(states[i]).getRadians())
 				);
 			}
@@ -216,6 +217,17 @@ public final class SwerveUtils {
 				(Rotation2d a)->{ return a; },
 				states
 			);
+		}
+		public Pose3d[] getWheelPoses3d(double... rotations) {
+			final int len = Math.min(rotations.length, this.MODULE_LOCATIONS_3D.length);
+			final Pose3d[] poses = new Pose3d[len];
+			for(int i = 0; i < len; i++) {
+				poses[i] = new Pose3d(
+					this.MODULE_LOCATIONS_3D[i],
+					new Rotation3d(0, 0, rotations[i])
+				);
+			}
+			return poses;
 		}
 
 

@@ -4,16 +4,12 @@ import edu.wpi.first.util.sendable.*;
 import edu.wpi.first.wpilibj.interfaces.Gyro;
 import edu.wpi.first.wpilibj2.command.Subsystem;
 import edu.wpi.first.math.geometry.*;
-import edu.wpi.first.math.kinematics.*;
-import edu.wpi.first.math.system.plant.DCMotor;
-import edu.wpi.first.math.trajectory.constraint.SwerveDriveKinematicsConstraint;
 
 import frc.robot.swerve.SwerveUtils.*;
 import frc.robot.team3407.Util;
-import frc.robot.team3407.drive.Types.*;
 
 
-/** A high-level swerve drive container that allows driving and simulation of any possible {@link SwerveModule} implementation,
+/** A high-level swerve drive abstraction that allows driving and simulation of any possible {@link SwerveModule} implementation,
  * and allows for any number of modules and physical layouts. */
 public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Sendable {
 
@@ -27,6 +23,7 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 	public final int SIZE;
 
 	private SwerveModuleStates[] states;
+
 
 	public SwerveDrive(Gyro gyro, Module_T... modules) {
 		this.modules = modules;
@@ -70,6 +67,9 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 
 
 
+
+
+	/** GenericSwerveDrive allows for multiple implementations of SwerveModule to be used in the same drivebase, but sacrifices specific module type functionality */
 	public static class GenericSwerveDrive extends SwerveDrive<SwerveModule> {
 
 		public GenericSwerveDrive(Gyro gyro, SwerveModule... modules) {

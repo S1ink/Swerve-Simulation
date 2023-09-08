@@ -11,13 +11,17 @@ import frc.robot.swerve.SwerveUtils.*;
 
 public final class SwerveKinematics {
 
+	protected final Translation2d[]
+		module_locations;
 	protected final SimpleMatrix
 		inv_kinematics, fwd_kinematics,
 		inv_kinematics2, fwd_kinematics2;
 	protected final int SIZE;
-	protected final Translation2d[] module_locations;
-	protected SwerveModuleStates[] stored_states;
-	protected Translation2d stored_recenter = new Translation2d();
+	protected SwerveModuleStates[]
+		stored_states;
+	protected Translation2d
+		stored_recenter = new Translation2d();
+
 
 	public SwerveKinematics(Translation2d... locations) {
 
@@ -122,17 +126,17 @@ public final class SwerveKinematics {
 		for(int i = 0; i < this.SIZE; i++) {
 			SwerveModuleStates state = states[i];
 			final double
-				v = state.linear_velocity,
-				om = state.angular_velocity,
-				a = state.linear_acceleration,
+				lv = state.linear_velocity,
+				av = state.angular_velocity,
+				la = state.linear_acceleration,
 				sin = state.angle.getSin(),
 				cos = state.angle.getCos(),
-				a_x = (cos * a - sin * v * om),
-				a_y = (sin * a + cos * v * om);
-			module_states_order1.set(i * 2 + 0, 0, v * sin);
-			module_states_order1.set(i * 2 + 1, 0, v * cos);
-			module_states_order2.set(i * 2 + 0, 0, a_x);
-			module_states_order2.set(i * 2 + 1, 0, a_y);
+				la_x = (cos * la - sin * lv * av),
+				la_y = (sin * la + cos * lv * av);
+			module_states_order1.set(i * 2 + 0, 0, lv * sin);
+			module_states_order1.set(i * 2 + 1, 0, lv * cos);
+			module_states_order2.set(i * 2 + 0, 0, la_x);
+			module_states_order2.set(i * 2 + 1, 0, la_y);
 		}
 
 		final SimpleMatrix
@@ -183,5 +187,6 @@ public final class SwerveKinematics {
 		}
 		return mat;
 	}
+
 
 }

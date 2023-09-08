@@ -5,10 +5,11 @@ import edu.wpi.first.util.sendable.*;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
 
 import frc.robot.swerve.SwerveUtils.*;
+import frc.robot.swerve.simutil.*;
 
 
 /** Base interface for all swerve modules such that they can be 
-	 * driven, tracked using odometry, and optionally used in simulation. */
+ * driven, tracked using odometry, and optionally used in simulation. */
 public abstract class SwerveModule implements Sendable {
 
 	public final Translation2d module_location;
@@ -55,28 +56,22 @@ public abstract class SwerveModule implements Sendable {
 
 
 	/* SIMULATION */
-	/* NOTE: Above, the wheel's forward/backward movement is tracked linearly - meaning the
-		* distance/speed along the floor (meters/meters per second). Here, the movement is
-		* tracked angularly (radians, radians per second) because that is more convenient for the
-		* simulator. The conversion between linear and angular translations should be done internally
-		* using the wheel radius - this is done so that the wheel radius does not ever need to be known
-		* by the interface or larger swerve system. */
 
 	/** Get the voltage applied to motor A */
 	public double getMotorAVolts() { return 0.0; }
 	/** Get the voltage applied to motor B */
 	public double getMotorBVolts() { return 0.0; }
 	/** Get all simulation required functionality */
-	public SwerveSimulator.ModuleSim getSimProperties() { return null; }
+	public SwerveModuleModel getSimProperties() { return null; }
 
 	/** Set the simulated steering angle in radians */
 	public void setSimulatedSteeringAngle(double angle) {}
 	/** Set the simulated steering angular velocity in radians per second */
 	public void setSimulatedSteeringRate(double omega) {}
-	/** Set the simulated wheel displacement in radians */
-	public void setSimulatedWheelPosition(double angle) {}
-	/** Set the simulated wheel velocity in radians per second */
-	public void setSimulatedWheelVelocity(double omega) {}
+	/** Set the simulated wheel displacement in meters */
+	public void setSimulatedWheelPosition(double angle) {}		// LINEAR NOT ANGULAR
+	/** Set the simulated wheel velocity in meters per second */
+	public void setSimulatedWheelVelocity(double omega) {}		// LINEAR NOT ANGULAR
 
 
 	@Override
