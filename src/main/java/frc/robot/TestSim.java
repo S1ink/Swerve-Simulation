@@ -42,9 +42,9 @@ public class TestSim extends CommandBase {
 			// steer_motor_frict,	// this is a bit extra but physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
 			// drive_motor_frict = steer_motor_frict = new StribeckFriction(0, 0, 0, 0),
 			steer_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.02),
-			drive_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.02),
+			drive_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.1),
 			steer_floor_frict = new StribeckFriction(0.1, 0.05, 0.02, 0),
-			wheel_side_frict = new StribeckFriction(0.1, 0.3, 0.2, 0);
+			wheel_side_frict = new StribeckFriction(0.1, 0.6, 0.5, 0);
 		private static final double
 			MODULE_STATIC_RI = 0.013,		// about the steer axis, or wherever the module's measured center is
 			MODULE_STATIC_LI = 2.115,
@@ -270,5 +270,67 @@ public class TestSim extends CommandBase {
 		builder.addDoubleArrayProperty("Wheel Poses", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.wheel_states)), null);
 		builder.addDoubleArrayProperty("Wheel Vectors", ()->SwerveVisualization.getVecComponents2d(this.wheel_states), null);
 	}
+
+
+
+	public static class TestSim2 extends CommandBase {
+
+		private final TestModule[] modules;
+		public final SwerveSimulator simulator;
+		private final DoubleSupplier
+			steer_volts_1,
+			steer_volts_2,
+			steer_volts_3,
+			steer_volts_4,
+			drive_volts;
+
+		public TestSim2(
+			DoubleSupplier sv1,
+			DoubleSupplier sv2,
+			DoubleSupplier sv3,
+			DoubleSupplier sv4,
+			DoubleSupplier dv,
+			Translation2d... modules
+		) {
+			this.modules = new TestModule[modules.length];
+			for(int i = 0; i < this.modules.length; i++) {
+				this.modules[i] = new TestModule(modules[i]);
+			}
+			this.simulator = new SwerveSimulator(SIM_CONFIG, TestModuleModel.inst, this.modules);
+
+			this.steer_volts_1 = sv1;
+			this.steer_volts_2 = sv2;
+			this.steer_volts_3 = sv3;
+			this.steer_volts_4 = sv4;
+			this.drive_volts = dv;
+		}
+
+		@Override
+		public void initialize() {
+
+		}
+		@Override
+		public void execute() {
+			final double
+				sv1 = this.steer_volts_1.getAsDouble(),
+				sv2 = this.steer_volts_2.getAsDouble(),
+				sv3 = this.steer_volts_3.getAsDouble(),
+				sv4 = this.steer_volts_4.getAsDouble(),
+				dv = this.drive_volts.getAsDouble();
+			this.modules[0].setVoltage(sv1, dv);
+			this.modules[1].setVoltage(sv2, dv);
+			this.modules[2].setVoltage(sv3, dv);
+			this.modules[3].setVoltage(sv4, dv);
+		}
+		@Override
+		public void end(boolean i) {
+			for(TestModule m : this.modules) {
+				m.setVoltage(0, 0);
+			}
+		}
+
+
+	}
+
 
 }
