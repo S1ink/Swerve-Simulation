@@ -2,6 +2,7 @@ package frc.robot.swerve;
 
 import java.util.ArrayList;
 import java.util.function.BiFunction;
+import java.util.Iterator;
 
 import edu.wpi.first.math.system.NumericalIntegration;
 import edu.wpi.first.math.geometry.*;
@@ -11,7 +12,8 @@ import edu.wpi.first.util.sendable.*;
 
 import frc.robot.swerve.SwerveUtils.*;
 import frc.robot.swerve.simutil.*;
-import frc.robot.team3407.Util;
+import frc.robot.team3407.*;
+import frc.robot.team3407.SenderNT.RecursiveSendable;
 
 
 /** SwerveSimulator applies the "high-level" physics computation and integration required to simulate a
@@ -19,7 +21,7 @@ import frc.robot.team3407.Util;
  * physical properties to be reimplemented and swapped using various interfaces. In this way, close to none of
  * the simulator's properties are locked in - the number of modules used, and module physical properties can all be
  * reimplemented. */
-public class SwerveSimulator implements Sendable {
+public class SwerveSimulator implements RecursiveSendable {
 
 	/** A container for all the extra simulation parameters. */
 	public static class SimConfig {
@@ -56,7 +58,7 @@ public class SwerveSimulator implements Sendable {
 	}
 	/** An interface to match the DEBUG dynamics sampler (with dt param). */
 	public static interface DynamicsDTd_F<States extends Num, Inputs extends Num> {
-		public Matrix<States, N1> sample(Matrix<States, N1> x, Matrix<Inputs, N1> u, double dt, ArrayList<double[]> debug);
+		public Matrix<States, N1> sample(Matrix<States, N1> x, Matrix<Inputs, N1> u, double dt, DynamicsBuffer buff);
 	}
 	/** Generate a lambda function that wraps the dynamics with a specified dt param. */
 	public static <States extends Num, Inputs extends Num>
@@ -68,9 +70,9 @@ public class SwerveSimulator implements Sendable {
 	/** Generate a lambda function that wraps the DEBUG dynamics with a specified dt param and attaches the debug array. */
 	public static <States extends Num, Inputs extends Num>
 		BiFunction< Matrix<States, N1>, Matrix<Inputs, N1>, Matrix<States, N1> >
-			genDebugWrapper(DynamicsDTd_F<States, Inputs> f_d, double dt, ArrayList<double[]> debug)
+			genDebugWrapper(DynamicsDTd_F<States, Inputs> f_d, double dt, ArrayIterator<DynamicsBuffer> dbarr)
 	{
-		return (Matrix<States, N1> _x, Matrix<Inputs, N1> _u)->{ return f_d.sample(_x, _u, dt, debug); };
+		return (Matrix<States, N1> _x, Matrix<Inputs, N1> _u)->{ return f_d.sample(_x, _u, dt, dbarr.next()); };
 	}
 
 	/** All the states present in the states matrix along with helper methods for manipulating the matrix data. */
@@ -147,14 +149,13 @@ public class SwerveSimulator implements Sendable {
 	private final SimConfig config;
 	private final SwerveVisualization visualization;
 	private final Vector2[] module_locs;
+	private final DynamicsBuffer[] buffers = new DynamicsBuffer[4];
 	private final int SIZE;
 	private final NX N_INPUTS, N_STATES;
 	private double STATIC_MASS;
 
 	private final Matrix<NX, N1> u_inputs;
 	private Matrix<NX, N1> x_states, y_outputs;
-	private ArrayList<double[]> debug_buff = new ArrayList<>();
-	private double[] last_debug = new double[29];
 
 
 	public SwerveSimulator(SimConfig config, SwerveModule... modules) {
@@ -185,6 +186,9 @@ public class SwerveSimulator implements Sendable {
 		}
 		for(int i = 0; i < this.SIZE; i++) {
 			this.module_locs[i] = new Vector2(this.modules[i].module_location);
+		}
+		for(int i = 0; i < this.buffers.length; i++) {
+			this.buffers[i] = new DynamicsBuffer(this.SIZE);
 		}
 	}
 
@@ -228,12 +232,10 @@ public class SwerveSimulator implements Sendable {
 			this.u_inputs.set(i * 2 + 0, 0, this.modules[i].getMotorAVolts());
 			this.u_inputs.set(i * 2 + 1, 0, this.modules[i].getMotorBVolts());
 		}
+		final ArrayIterator<DynamicsBuffer> dbarr = new ArrayIterator<>(this.buffers);
 		this.x_states = NumericalIntegration.rk4(
-			genDebugWrapper(this::dynamics, dt_seconds, this.debug_buff), this.x_states, this.u_inputs, dt_seconds);
+			genDebugWrapper(this::dynamics, dt_seconds, dbarr), this.x_states, this.u_inputs, dt_seconds);
 		this.y_outputs = x_states.copy();
-		// this.last_debug = this.debug_buff.get(this.debug_buff.size() - 1);
-		this.last_debug = this.debug_buff.get(0);
-		this.debug_buff.clear();
 	}
 	/** Update each module's feedback data. */
 	public synchronized void updateSimHW() {
@@ -250,7 +252,7 @@ public class SwerveSimulator implements Sendable {
 	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds)
 		{ return this.dynamics(x, u, dt_seconds, null); }
 	/** The simulation dynamics. Given a state, input, and timestep, compute the change in state. */
-	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds, ArrayList<double[]> debug) {
+	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds, DynamicsBuffer buffer) {
 
 		/** A note on 'physically quantitative' variable names:
 		 * PREFIXES {r, l}:
@@ -273,176 +275,135 @@ public class SwerveSimulator implements Sendable {
 			F_norm_z = this.STATIC_MASS * 9.8,
 			PI2 = (Math.PI * 2.0);
 
-		// STEP 0A: Allocate buffers for delta, system applictant force/torque, friction, headings, system momentum
+		// STEP 0A: Allocate buffers for delta, reset summations
+		if(buffer == null) { buffer = new DynamicsBuffer(this.SIZE); }
+		final DynamicsBuffer db = buffer;
 		final Matrix<NX, N1>
 			x_prime = new Matrix<>(x.getStorage().createLike());
-		final Vector2
-			F_app = new Vector2(),
-			F_frict = new Vector2();
-		final double[]
-			wheel_headings = new double[this.SIZE],
-			wheel_velocities = new double[this.SIZE];
-		double
-			Tq_app = 0.0,
-			Tq_frict = 0.0,
-			lI_momentum = this.config.ROBOT_MASS,
-			rI_momentum = this.config.ROBOT_RI;
+
+		db.F_app.clear();
+		db.F_frict.clear();
+		db.Tq_app = 0.0;
+		db.Tq_frict = 0.0;
+		db.lI_momentum = this.config.ROBOT_MASS;
+		db.rI_momentum = this.config.ROBOT_RI;
 
 		// STEP 0B: Extract system states
-		final double
-			rx_frame = State.FrameRotation.from(x) % PI2,	// theta offset from the frame coordinate system
-			rv_frame = State.FrameAngularVel.from(x);		// the frame's rotation rate -- abstract coordinate space?
-		final Vector2
-			lv_field = new Vector2(					// the frame's velocity in the field coordinate system
-				State.FrameVelocityX.from(x),
-				State.FrameVelocityY.from(x) ),
-			lv_frame = lv_field.rotate(-rx_frame);	// the frame's velocity in it's own coordinate system
-		final double
-			rx_frame_lv = lv_frame.theta();			// the angle theta of the frame's velocity vector in it's own coordinate system
+		db.rx_frame = State.FrameRotation.from(x) % PI2;	// theta offset from the frame coordinate system
+		db.rv_frame = State.FrameAngularVel.from(x);		// the frame's rotation rate -- abstract coordinate space?
+		db.lv_field.set(									// the frame's velocity in the field coordinate system
+			State.FrameVelocityX.from(x),
+			State.FrameVelocityY.from(x) );
+		db.lv_frame.set(db.lv_field)			// the frame's velocity in it's own coordinate system
+			.rotate(-db.rx_frame);
+		db.rx_frame_lv = db.lv_frame.theta();	// the angle theta of the frame's velocity vector in it's own coordinate system
 
 		// STEP 1: Module iteration #1
 		for(int i = 0; i < this.SIZE; i++) {
-			final double
-			// STEP 1A(xN): Extract module states
-				volts_a = u.get(i * 2, 0),
-				volts_b = u.get(i * 2 + 1, 0),
-				rx_steer = State.SteerAngle.fromN(x, i) % PI2,		// the steer angle in the frames's coordinate system
-				rv_steer = State.SteerRate.fromN(x, i),				// the steer rate from the frame's reference
-				// lv_wheel = State.DriveVelocity.fromN(x, i),			// the linear velocity of the module from the module's reference
-				lv_wheel = Vector2.add( lv_frame, Vector2.cross( rv_frame, this.module_locs[i] ) ).rotate(-rx_steer).x(),	// ^ compute based on frame velocity for better results
-			// STEP 1B(xN): Initial module property calculations
-				ra_steer = this.module_models[i].steerAAccel( volts_a, volts_b, rv_steer, lv_wheel, F_norm_z, dt_seconds ),
-				F_wheel = this.module_models[i].wheelForceM( volts_a, volts_b, rv_steer, lv_wheel, dt_seconds );
-			// STEP 1C(xN): Set applicant output deltas
-			State.SteerAngle.setN(x_prime, i, rv_steer);
-			State.SteerRate.setN(x_prime, i, ra_steer);
-			State.DrivePosition.setN(x_prime, i, lv_wheel);
+			final DynamicsBuffer.ModuleBuffer mb = db.modn(i);
+		// STEP 1A(xN): Extract module states
+			mb.volts_a = u.get(i * 2, 0);
+			mb.volts_b = u.get(i * 2 + 1, 0);
+			mb.rx_steer = State.SteerAngle.fromN(x, i) % PI2;		// the steer angle in the frames's coordinate system
+			mb.rv_steer = State.SteerRate.fromN(x, i);				// the steer rate from the frame's reference
+			// mb.lv_wheel = State.DriveVelocity.fromN(x, i),		// the linear velocity of the module from the module's reference
+			mb.lv_wheel = Vector2
+				.add( db.lv_frame,
+					Vector2.cross( db.rv_frame, this.module_locs[i] ) )		// compute based on frame velocity for better results compared to ^
+				.rotate(-mb.rx_steer)
+				.x();
+		// STEP 1B(xN): Initial module property calculations
+			mb.ra_steer = this.module_models[i]
+				.steerAAccel( mb.volts_a, mb.volts_b, mb.rv_steer, mb.lv_wheel, F_norm_z, dt_seconds );
+			mb.F_src_mag = this.module_models[i]
+				.wheelForceM( mb.volts_a, mb.volts_b, mb.rv_steer, mb.lv_wheel, dt_seconds );
+		// STEP 1C(xN): Set applicant output deltas
+			State.SteerAngle.setN(x_prime, i, mb.rv_steer);
+			State.SteerRate.setN(x_prime, i, mb.ra_steer);
+			State.DrivePosition.setN(x_prime, i, mb.lv_wheel);
 
-			// STEP 1D(xN): Wheel force vector
-			final Vector2
-				F_wheel_2d = Vector2.fromPolar(F_wheel, rx_steer);			// the wheel force vector in the frame's coordinate system
-			// STEP 1E(xN): Sum the system's applicant force and torque, store headings
-			F_app.append(F_wheel_2d);
-			Tq_app += this.module_locs[i].cross(F_wheel_2d);				// the cross product takes place in the frame's coordinate system
-			wheel_headings[i] = rx_steer;
-			wheel_velocities[i] = lv_wheel;
-			// STEP 1F(xN): Sum the system's linear and rotational momentum based on the direction of these velocities (includes wheel geartrain inertia)
-			lI_momentum += this.module_models[i].effectiveLinearInertia( (rx_frame_lv - rx_steer) );	// <-- the difference occurs in the frame coordinate system
-			rI_momentum += this.module_models[i].effectiveRotationalInertia(
-				(Vector2.cross( rv_frame, this.module_locs[i] ).theta() - rx_steer), this.module_locs[i].norm() );	// <-- also in frame coordinate system because module_locs[] is frame local while omega is abstract
+		// STEP 1D(xN): Wheel force vector
+			mb.F_src_vec = Vector2.fromPolar(mb.F_src_mag, mb.rx_steer);	// the wheel force vector in the frame's coordinate system
+		// STEP 1E(xN): Sum the system's applicant force and torque, store headings
+			db.F_app.append(mb.F_src_vec);
+			db.Tq_app += this.module_locs[i].cross(mb.F_src_vec);			// the cross product takes place in the frame's coordinate system
+		// STEP 1F(xN): Sum the system's linear and rotational momentum based on the direction of these velocities (includes wheel geartrain inertia)
+			db.lI_momentum += this.module_models[i]
+				.effectiveLinearInertia( (db.rx_frame_lv - mb.rx_steer) );	// <-- the difference occurs in the frame coordinate system
+			db.rI_momentum += this.module_models[i]
+				.effectiveRotationalInertia(
+					( Vector2.cross( db.rv_frame, this.module_locs[i] )
+						.theta() - mb.rx_steer ),
+					this.module_locs[i].norm() );	// <-- also in frame coordinate system because module_locs[] is frame local while omega is abstract
+					// ^^^ this calculation should be cached since it is used later!
 		}
 		// STEP 1G: Total system linear and rotational momentum
-		final Vector2
-			lP_sys = new Vector2(lv_frame).times(lI_momentum);	// the momentum in frame coordinate space
-		final double
-			rP_sys = rv_frame * rI_momentum;					// the rotational momenum is abstract?
-
-		// debug initial summations here
+		db.lP_sys.set(db.lv_frame).times(db.lI_momentum);		// the momentum in frame coordinate space
+		db.rP_sys = db.rv_frame * db.rI_momentum;						// the rotational momenum is abstract?
 
 		// STEP 2: Calculate friction (module iteration #2)
 		for(int i = 0; i < this.SIZE; i++) {
-			final Vector2
-			// STEP 2A(xN): Calc the force component acting at the module's CG
-				Fn = Vector2
-					.add( F_app, Vector2.invCross( Tq_app / this.SIZE, this.module_locs[i] ) ),		// addition and cross product take place in frame coord space
-				lvN = Vector2
-					.add( lv_frame, Vector2.cross( rv_frame, this.module_locs[i] ) ),	// part of this is already calculated in the first iteration :\
-				// Pn = Vector2
-				// 	.add( lP_sys, Vector2.invCross(this.module_locs[i], rP_sys / this.SIZE) ),
-				wheel_heading = Vector2.fromPolar( 1.0, wheel_headings[i] );		// unit vector in the wheel fwd direction -- in field coord space
-			final double
-			// STEP 2B(xN): Split Fn vector into components that are aligned with the wheel's heading
-				F_para = Vector2.dot( wheel_heading, Fn ),
-				F_poip = Vector2.cross( wheel_heading, Fn ),
-				lv_poip = Vector2.cross( wheel_heading, lvN ),
-				// P_para = Vector2.dot(Pn, wheel_heading),
-				// P_poip = Vector2.cross(Pn, wheel_heading),
-				volts_a = u.get(i * 2, 0),
-				volts_b = u.get(i * 2 + 1, 0),
-				rv_steer = State.SteerRate.fromN(x, i),
-				lv_wheel = wheel_velocities[i],
-			// STEP 2C(xN): Calc maximum friction force in each direction via module properties
-				F_inline_frict = this.module_models[i]
-					.wheelGearFriction( F_norm_z, F_para, volts_a, volts_b, rv_steer, lv_wheel, dt_seconds ),
-				F_side_frict = this.module_models[i]
-					.wheelSideFriction( F_norm_z, F_poip, lv_poip, dt_seconds );
-			final Vector2
-			// STEP 2D(xN): Combine friction components into a single vector
-				F_frict_n = new Vector2( F_inline_frict, F_side_frict ).rotate( wheel_headings[i] );
-			// STEP 2E(xN): Append to total friction and torque vectors
-			F_frict.append(F_frict_n);
-			Tq_frict += this.module_locs[i].cross(F_frict_n);
+			final DynamicsBuffer.ModuleBuffer mb = db.modn(i);
+			final Vector2 wheel_vec = Vector2.fromPolar( 1.0, mb.rx_steer );	// unit vector in the wheel fwd direction -- in field coord space
+		// STEP 2A(xN): Calc the force component acting at the module's CG
+			mb.F_ext.set(db.F_app)
+				.append( Vector2.invCross( db.Tq_app / this.SIZE, this.module_locs[i] ) );	// addition and cross product take place in frame coord space
+			mb.lv_ext.set(db.lv_frame)
+				.append( Vector2.cross( db.rv_frame, this.module_locs[i] ) );		// use a cache!!! -- see 347
+		// STEP 2B(xN): Split Fn vector into components that are aligned with the wheel's heading
+			mb.F_ext_para = Vector2.dot( wheel_vec, mb.F_ext );
+			mb.F_ext_poip = Vector2.cross( wheel_vec, mb.F_ext );
+			mb.lv_side = Vector2.cross( wheel_vec, mb.lv_ext );
+		// STEP 2C(xN): Calc maximum friction force in each direction via module properties
+			mb.F_frict_para = this.module_models[i]
+				.wheelGearFriction( F_norm_z, mb.F_ext_para, mb.volts_a, mb.volts_b, mb.rv_steer, mb.lv_wheel, dt_seconds );
+			mb.F_frict_poip = this.module_models[i]
+				.wheelSideFriction( F_norm_z, mb.F_ext_poip, mb.lv_side, dt_seconds );
+		// STEP 2D(xN): Combine friction components into a single vector
+			mb.F_frict_sum.set( mb.F_frict_para, mb.F_frict_poip )
+				.rotate( mb.rx_steer );
+		// STEP 2E(xN): Append to total friction and torque vectors
+			db.F_frict.append(mb.F_frict_sum);
+			db.Tq_frict += this.module_locs[i].cross(mb.F_frict_sum);
 		}
 
 		// STEP 3: Sum the applicant and friction force/torque such that the momentum does not change direction because of friction
-		final Vector2
-			F_sys = Vector2.applyFriction( F_app, lP_sys, F_frict, dt_seconds );	// the net linear force vector in frame coord space
-		final double	// ^ need to change this. friction should only be applied in 1D at the direction of net force, all side components don't mean
-			Tq_sys = FrictionModel.applyFriction( Tq_app, rP_sys, Tq_frict, dt_seconds ),
-			ax_f_sys = F_sys.theta();		// the angle of net linear force in frame coord space
+		db.F_sys.set( Vector2.applyFriction( db.F_app, db.lP_sys, db.F_frict, dt_seconds ) );	// the net linear force vector in frame coord space
+		db.Tq_sys = FrictionModel.applyFriction( db.Tq_app, db.rP_sys, db.Tq_frict, dt_seconds );
+		db.rx_f_sys = db.F_sys.theta();		// the angle of net linear force in frame coord space
+
 		// STEP 4: Sum the system inertias based on the direction of net force/torque
-		double
-			lI_sys = this.config.ROBOT_MASS,
-			rI_sys = this.config.ROBOT_RI;
+		db.lI_sys = this.config.ROBOT_MASS;
+		db.rI_sys = this.config.ROBOT_RI;
 		for(int i = 0; i < this.SIZE; i++) {
-			lI_sys += this.module_models[i].effectiveLinearInertia( (ax_f_sys - wheel_headings[i]) );	// OK -- both in frame coord system
-			rI_sys += this.module_models[i].effectiveRotationalInertia(
-				(Vector2.cross( Tq_sys, this.module_locs[i] ).theta() - wheel_headings[i]), this.module_locs[i].norm() );
+			final DynamicsBuffer.ModuleBuffer mb = db.modn(i);
+			db.lI_sys += this.module_models[i].effectiveLinearInertia( (db.rx_f_sys - mb.rx_steer) );	// OK -- both in frame coord system
+			db.rI_sys += this.module_models[i].effectiveRotationalInertia(
+				(Vector2.cross( db.Tq_sys, this.module_locs[i] ).theta() - mb.rx_steer), this.module_locs[i].norm() );	// add these as items in the buffer so we can see individual module inertias
 		}
+
 		// STEP 5: System linear and rotational acceleration
-		final Vector2
-			la_sys = new Vector2(F_sys).div(lI_sys);	// the net linear acceleration vector in frame coordinate space
-		final double
-			ra_sys = Tq_sys / rI_sys;					// the net angular acceleration (abstract reference)
+		db.la_sys.set(db.F_sys).div(db.lI_sys);		// the net linear acceleration vector in frame coordinate space
+		db.ra_sys = db.Tq_sys / db.rI_sys;			// the net angular acceleration (abstract reference)
 
 		// STEP 6: Fill x_prime
 		for(int i = 0; i < this.SIZE; i++) {	// alternatively, update wheel position based on integrated frame position -- take a delta and work backwards from that...
-			// STEP 6A(xN): Find the acceleration of each module in the direction of the wheel, update velocity delta
-			final Vector2
-				laN = Vector2	// the linear acceleration in frame coord space
-					.add( la_sys, Vector2.cross( ra_sys, this.module_locs[i] ) )	// the component of acceleration from adding linear and angular static -- frame coord sys operations
-					.sub( Vector2.mult( this.module_locs[i], (rv_frame * rv_frame) ) );		// the component from centripetal due to angular velocity -- frame coord sys because normalized to module_locs[]
-			State.DriveVelocity.setN( x_prime, i, laN.rotate(-wheel_headings[i]).x() );		// <-- rotate the vector to be in wheel/module reference and take the x(fwd) component as the wheel's acceleration
+			final DynamicsBuffer.ModuleBuffer mb = db.modn(i);
+		// STEP 6A(xN): Find the acceleration of each module in the direction of the wheel, update velocity delta
+			mb.la_ext.set(db.la_sys)	// the linear acceleration in frame coord space
+				.append( Vector2.cross( db.ra_sys, this.module_locs[i] ) )		// the component of acceleration from adding linear and angular static -- frame coord sys operations
+				.sub( Vector2.mult( this.module_locs[i], (db.rv_frame * db.rv_frame) ) );			// the component from centripetal due to angular velocity -- frame coord sys because normalized to module_locs[]
+			State.DriveVelocity.setN( x_prime, i, Vector2.rotate(mb.la_ext, -mb.rx_steer).x() );	// <-- rotate the vector to be in wheel/module reference and take the x(fwd) component as the wheel's acceleration
 		}
 		// STEP 6B: Convert linear acceleration from frame reference back to field reference because we want to keep track of the robot relative to the field, not relative to itself
-		final Vector2
-			la_field = la_sys.rotate(rx_frame);		// convert back to field coordinate space
+		db.la_field = db.la_sys.rotate(db.rx_frame);		// convert back to field coordinate space
 		// STEP 6C: Set fields
-		State.FrameVelocityX.set(x_prime, la_field.x());	// delta velocity in field space
-		State.FrameVelocityY.set(x_prime, la_field.y());
-		State.FrameAngularVel.set(x_prime, ra_sys);			// delta rotation rate (abstract ref)
-		State.FramePositionX.set(x_prime, lv_field.x());	// delta position in field space -- not modified from previous state
-		State.FramePositionY.set(x_prime, lv_field.y());
-		State.FrameRotation.set(x_prime, rv_frame);			// delta rotation (absolute ref)
-
-		// STEP 7: Load debug array
-		if(debug != null) {
-			final double[]
-				vals = new double[] {
-					F_app.x(), F_app.y(),
-					F_frict.x(), F_frict.y(),
-					Tq_app,
-					Tq_frict,
-					lI_momentum,
-					rI_momentum,
-					rx_frame,
-					rv_frame,
-					lv_field.x(), lv_field.y(),
-					lv_frame.x(), lv_frame.y(),
-					rx_frame_lv,
-					lP_sys.x(), lP_sys.y(),
-					rP_sys,
-					F_sys.x(), F_sys.y(),
-					Tq_sys,
-					ax_f_sys,
-					lI_sys,
-					rI_sys,
-					la_sys.x(), la_sys.y(),
-					ra_sys,
-					la_field.x(), la_field.y()	// 29 fields
-				};
-			debug.add(vals);
-		}
+		State.FrameVelocityX.set(x_prime, db.la_field.x());		// delta velocity in field space
+		State.FrameVelocityY.set(x_prime, db.la_field.y());
+		State.FrameAngularVel.set(x_prime, db.ra_sys);			// delta rotation rate (abstract ref)
+		State.FramePositionX.set(x_prime, db.lv_field.x());		// delta position in field space -- not modified from previous state
+		State.FramePositionY.set(x_prime, db.lv_field.y());
+		State.FrameRotation.set(x_prime, db.rv_frame);			// delta rotation (absolute ref)
 
 		return x_prime;
 
@@ -452,41 +413,22 @@ public class SwerveSimulator implements Sendable {
 
 	@Override
 	public void initSendable(SendableBuilder b) {
-		b.addDoubleArrayProperty("State Data", ()->this.y_outputs.getData(), null);
+		b.addDoubleArrayProperty("State Data", this.y_outputs::getData, null);
 		b.addDoubleArrayProperty("Robot Pose",
 			()->new double[]{
 				State.FramePositionX.from(this.y_outputs),
 				State.FramePositionY.from(this.y_outputs),
 				State.FrameRotation.from(this.y_outputs)
 			}, null);
-		// b.addDoubleArrayProperty("Robot Pose",
-		// 	()->Util.toComponents2d( new Pose2d() ), null);
 		b.addDoubleArrayProperty("Wheel Poses",
 			()->Util.toComponents3d( this.visualization.getWheelPoses3d( this.getWheelRotations() ) ), null);
-
-		b.addDoubleProperty("Applied Torque",				()->this.last_debug[4], null);
-		b.addDoubleProperty("Frictional Torque",			()->this.last_debug[5], null);
-		b.addDoubleProperty("Linear Inertia (P-pass)",		()->this.last_debug[6], null);
-		b.addDoubleProperty("Rotational Inertia (P-pass)",	()->this.last_debug[7], null);
-		b.addDoubleProperty("Frame Ref Angle",				()->this.last_debug[8], null);
-		b.addDoubleProperty("Frame Angular Vel",			()->this.last_debug[9], null);
-		b.addDoubleProperty("Frame Velocity Direction",	()->this.last_debug[14], null);
-		b.addDoubleProperty("Angular Momentum",			()->this.last_debug[17], null);
-		b.addDoubleProperty("Net Torque",					()->this.last_debug[20], null);
-		b.addDoubleProperty("Net Force Direction",			()->this.last_debug[21], null);
-		b.addDoubleProperty("Linear Inertia (F-pass)",		()->this.last_debug[22], null);
-		b.addDoubleProperty("Rotational Inertia (F-pass)",	()->this.last_debug[23], null);
-		b.addDoubleProperty("Rotational Acceleration",		()->this.last_debug[26], null);
-		b.addDoubleArrayProperty("Net Applied Force",		()->new double[]{ this.last_debug[0], this.last_debug[1] }, null);
-		b.addDoubleArrayProperty("Net Friction",			()->new double[]{ this.last_debug[2], this.last_debug[3] }, null);
-		b.addDoubleArrayProperty("Field Velocity",			()->new double[]{ this.last_debug[10], this.last_debug[11] }, null);
-		b.addDoubleArrayProperty("Frame Velocity",			()->new double[]{ this.last_debug[12], this.last_debug[13] }, null);
-		b.addDoubleArrayProperty("Linear Momentum",		()->new double[]{ this.last_debug[15], this.last_debug[16] }, null);
-		b.addDoubleArrayProperty("Net Summed Force",		()->new double[]{ this.last_debug[18], this.last_debug[19] }, null);
-		b.addDoubleArrayProperty("Net Frame Acceleration",	()->new double[]{ this.last_debug[24], this.last_debug[25] }, null);
-		b.addDoubleArrayProperty("Net Field Acceleration",	()->new double[]{ this.last_debug[27], this.last_debug[28] }, null);
-
-		b.addIntegerProperty("Debug Buffer Size", ()->this.debug_buff.size(), null);
+	}
+	@Override
+	public void initRecursive(SenderNT s, String key) {
+		s.putData(key, (Sendable)this);
+		for(int i = 0; i < this.buffers.length; i++) {
+			s.putData(key + "/Buffer [" + i + "]", this.buffers[i]);
+		}
 	}
 
 	@Override
@@ -520,6 +462,152 @@ public class SwerveSimulator implements Sendable {
 			);
 		}
 		return s;
+	}
+
+
+
+
+
+	private static class DynamicsBuffer implements RecursiveSendable {
+
+		public static class ModuleBuffer implements Sendable {
+
+			public Vector2
+				F_src_vec	= new Vector2(),	// the force from the wheel in vector form
+				F_ext		= new Vector2(),	// the redistributed average force on the module
+				F_frict_sum	= new Vector2(),
+				lv_ext		= new Vector2(),	// the externally calculated module velocity
+				la_ext		= new Vector2();	// the externally calculated module acceleration
+			public double
+				volts_a,		// input volts a
+				volts_b,		// input volts b
+				rx_steer,		// steer angle
+				rv_steer,		// steer angular velocity
+				ra_steer,		// steer angular acceleration
+				lv_wheel,		// linear velocity of the wheel along the floor
+				lv_side,		// externally calculated side sliding velocity (perpendicular to the wheel's heading)
+				F_src_mag,		// the magnitude of the force from the wheel
+				F_ext_para,		// the component of redistributed average force on the module in the direction of the wheel
+				F_ext_poip,		// the component of redistributed average force on the module in the direction perpendiculat to the wheel
+				F_frict_para,	// the friction from the wheel and geartrain
+				F_frict_poip;	// the friction from sliding sideways
+
+			@Override
+			public void initSendable(SendableBuilder b) {
+				b.addDoubleArrayProperty("Wheel Force 2D",				this.F_src_vec::getData, null);
+				b.addDoubleArrayProperty("Redistributed Force 2D",		this.F_ext::getData, null);
+				b.addDoubleArrayProperty("Net Friction Force 2D",		this.F_frict_sum::getData, null);
+				b.addDoubleArrayProperty("Module Velocity 2D",			this.lv_ext::getData, null);
+				b.addDoubleArrayProperty("Module Acceleration 2D",		this.la_ext::getData, null);
+				b.addDoubleProperty("Input Volts A",				()->this.volts_a, null);
+				b.addDoubleProperty("Input Volts B",				()->this.volts_b, null);
+				b.addDoubleProperty("Steer Angle (frame)",			()->this.rx_steer, null);
+				b.addDoubleProperty("Steer Angular Velocity",		()->this.rv_steer, null);
+				b.addDoubleProperty("Steer Angular Acceleration",	()->this.ra_steer, null);
+				b.addDoubleProperty("Wheel Inline Velocity",		()->this.lv_wheel, null);
+				b.addDoubleProperty("Module Slide Velocity",		()->this.lv_side, null);
+				b.addDoubleProperty("Wheel Force Magnitude",		()->this.F_src_mag, null);
+				b.addDoubleProperty("Inline Redistributed Force",	()->this.F_ext_para, null);
+				b.addDoubleProperty("Side Redistributed Force",	()->this.F_ext_poip, null);
+				b.addDoubleProperty("Inline Friction Force",		()->this.F_frict_para, null);
+				b.addDoubleProperty("Side Friction Force",			()->this.F_frict_poip, null);
+			}
+
+
+		}
+
+		public ModuleBuffer[]
+			module_buffers;
+		public Vector2
+			lP_sys		= new Vector2(),	// linear momentum of system
+			F_app		= new Vector2(),	// sum applied linear force on frame
+			F_frict		= new Vector2(),	// sum linear frict on frame
+			F_sys		= new Vector2(),	// net linear force on frame
+			lv_field	= new Vector2(),	// linear velocity of frame in field coords
+			lv_frame	= new Vector2(),	// linear velocity of frame in frame coords
+			la_sys		= new Vector2(),	// linear acceleration of frame in frame coords
+			la_field	= new Vector2();	// linear acceleration of frame in field coords
+		public double
+			lI_momentum,	// linear inertia in the direction of net linear momentum
+			rI_momentum,	// rotational inertia in the direction of net rotational momentum
+			lI_sys,			// linear inertia in the direction of net linear force
+			rI_sys,			// rotational inertia in the direction if net rotational force
+			rP_sys,			// rotational momentum of system
+			Tq_app,			// applied torque on frame
+			Tq_frict,		// frictional torque on frame
+			Tq_sys,			// net torque on frame
+			rx_frame,		// rotational position of the frame in field coords (angle)
+			rx_frame_lv,	// rotational position of the frame's velocity vector (offset angle)
+			rx_f_sys,		// rotational position of direction of net force (offset angle)
+			rv_frame,		// rotational velocity of the frame
+			ra_sys;			// rotational acceleration of the frame
+
+		public DynamicsBuffer(int num_modules) {
+			this.module_buffers = new ModuleBuffer[num_modules];
+			for(int i = 0; i < num_modules; i++) {
+				this.module_buffers[i] = new ModuleBuffer();
+			}
+		}
+
+		public ModuleBuffer modn(int i) {
+			return (i >= 0 && i < this.module_buffers.length) ? this.module_buffers[i] : null;
+		}
+
+		@Override
+		public void initSendable(SendableBuilder b) {
+			b.addDoubleArrayProperty("Frame Momentum 2D",		this.lP_sys::getData, null);
+			b.addDoubleArrayProperty("Applied Force 2D",		this.F_app::getData, null);
+			b.addDoubleArrayProperty("Friction Force 2D",		this.F_frict::getData, null);
+			b.addDoubleArrayProperty("Net Force 2D",			this.F_sys::getData, null);
+			b.addDoubleArrayProperty("Field Velocity 2D",		this.lv_field::getData, null);
+			b.addDoubleArrayProperty("Frame Velocity 2D",		this.lv_frame::getData, null);
+			b.addDoubleArrayProperty("Frame Acceleration 2D",	this.la_sys::getData, null);
+			b.addDoubleArrayProperty("Field Acceleration 2D",	this.la_field::getData, null);
+			b.addDoubleProperty("Linear Inertia (P)",		()->this.lI_momentum, null);
+			b.addDoubleProperty("Rotational Inertia (P)",	()->this.rI_momentum, null);
+			b.addDoubleProperty("Linear Inertia (F)",		()->this.lI_sys, null);
+			b.addDoubleProperty("Rotational Inertia (F)",	()->this.rI_sys, null);
+			b.addDoubleProperty("Rotational Momentum",		()->this.rP_sys, null);
+			b.addDoubleProperty("Applied Torque",			()->this.Tq_app, null);
+			b.addDoubleProperty("Frictional Torque",		()->this.Tq_frict, null);
+			b.addDoubleProperty("Net Torque",				()->this.Tq_sys, null);
+			b.addDoubleProperty("Frame Rotation (field)",	()->this.rx_frame, null);
+			b.addDoubleProperty("Velocity Direction",		()->this.rx_frame_lv, null);
+			b.addDoubleProperty("Net Force Direction",		()->this.rx_f_sys, null);
+			b.addDoubleProperty("Rotational Velocity",		()->this.rv_frame, null);
+			b.addDoubleProperty("Rotational Acceleration",	()->this.ra_sys, null);
+		}
+		@Override
+		public void initRecursive(SenderNT s, String key) {
+			s.putData(key, (Sendable)this);
+			for(int i = 0; i < this.module_buffers.length; i++) {
+				s.putData(key + "/Module [" + i + "]", this.module_buffers[i]);
+			}
+		}
+
+
+	}
+
+	private static class ArrayIterator<T> implements Iterator<T> {
+
+		private final T[] arr;
+		private int ptr = 0;
+
+		public ArrayIterator(T[] arr) { this.arr = arr; }
+
+		public void reset() {
+			this.ptr = 0;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return this.ptr + 1 < arr.length;
+		}
+		@Override
+		public T next() {
+			return this.hasNext() ? this.arr[this.ptr++] : this.arr[this.arr.length - 1];
+		}
+
 	}
 
 

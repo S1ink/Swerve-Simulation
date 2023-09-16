@@ -31,9 +31,14 @@ public class Vector2 extends Vector<N2> {
 		this.set(1, 0, y);
 		return this;
 	}
+	public Vector2 set(Vector2 v) {
+		return this.set(v.x(), v.y());
+	}
 	public Vector2 set(Matrix<N2, N1> m) {
-		super.m_storage.setTo(m.getStorage());
-		return this;
+		return this.set(m.get(0, 0), m.get(1, 0));
+	}
+	public Vector2 clear() {
+		return this.set(0.0, 0.0);
 	}
 
 	public Vector2 negate() {
