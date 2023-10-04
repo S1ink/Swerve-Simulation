@@ -129,8 +129,8 @@ public final class SwerveKinematics {
 				lv = state.linear_velocity,
 				av = state.angular_velocity,
 				la = state.linear_acceleration,
-				sin = state.angle.getSin(),
-				cos = state.angle.getCos(),
+				sin = Math.sin(state.rotation),
+				cos = Math.cos(state.rotation),
 				la_x = (cos * la - sin * lv * av),
 				la_y = (sin * la + cos * lv * av);
 			module_states_order1.set(i * 2 + 0, 0, lv * sin);

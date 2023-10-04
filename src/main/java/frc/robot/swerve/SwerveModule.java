@@ -20,7 +20,7 @@ public abstract class SwerveModule implements Sendable {
 		{ this.setState(state.speedMetersPerSecond, state.angle.getRadians()); }
 	/** Set the desired second order state of the module. */
 	public void setState(SwerveModuleStates state)
-		{ this.setState(state.linear_velocity, state.angle.getRadians(), state.linear_acceleration, state.angular_velocity); }
+		{ this.setState(state.linear_velocity, state.rotation, state.linear_acceleration, state.angular_velocity); }
 	/** Set the desired state of the module. Wheel velocity is linear. */
 	public void setState(double linear_vel, double steer_angle_rad)
 		{ this.setState(linear_vel, steer_angle_rad, 0.0, 0.0); }
@@ -31,6 +31,9 @@ public abstract class SwerveModule implements Sendable {
 		double linear_acc,
 		double steer_angular_vel
 	);
+
+	/** Stop all motors/actuators. Sort of crucial for safety so must be implemented. */
+	abstract public void stop();
 
 	/** Get the steering angle in radians. The coord system begins pointing forward (robot front) and is CCW+ (unit circle) */
 	abstract public double getSteeringAngle();
@@ -65,13 +68,13 @@ public abstract class SwerveModule implements Sendable {
 	public SwerveModuleModel getSimProperties() { return null; }
 
 	/** Set the simulated steering angle in radians */
-	public void setSimulatedSteeringAngle(double angle) {}
+	public void setSimulatedSteeringAngle(double theta) {}
 	/** Set the simulated steering angular velocity in radians per second */
 	public void setSimulatedSteeringRate(double omega) {}
 	/** Set the simulated wheel displacement in meters */
-	public void setSimulatedWheelPosition(double angle) {}		// LINEAR NOT ANGULAR
+	public void setSimulatedWheelPosition(double x) {}		// LINEAR NOT ANGULAR
 	/** Set the simulated wheel velocity in meters per second */
-	public void setSimulatedWheelVelocity(double omega) {}		// LINEAR NOT ANGULAR
+	public void setSimulatedWheelVelocity(double v) {}		// LINEAR NOT ANGULAR
 
 
 	@Override

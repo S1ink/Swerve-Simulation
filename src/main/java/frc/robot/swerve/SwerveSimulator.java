@@ -1,6 +1,5 @@
 package frc.robot.swerve;
 
-import java.util.ArrayList;
 import java.util.function.BiFunction;
 import java.util.Iterator;
 
@@ -123,15 +122,6 @@ public class SwerveSimulator implements RecursiveSendable {
 		}
 		return t;
 	}
-	/** Helper to update a module based on the stored Matrix buffer. */
-	private synchronized void updateModuleSim(SwerveModule module, int index) {
-		if(index < this.SIZE) {
-			module.setSimulatedSteeringAngle(State.SteerAngle.fromN(this.y_outputs, index));
-			module.setSimulatedSteeringRate(State.SteerRate.fromN(this.y_outputs, index));
-			module.setSimulatedWheelPosition(State.DrivePosition.fromN(this.y_outputs, index));
-			module.setSimulatedWheelVelocity(State.DriveVelocity.fromN(this.y_outputs, index));
-		}
-	}
 	/** Helper to emplace all the wheel rotations into a single array. */
 	private synchronized double[] getWheelRotations() {
 		final double[] rotations = new double[this.SIZE];
@@ -149,13 +139,14 @@ public class SwerveSimulator implements RecursiveSendable {
 	private final SimConfig config;
 	private final SwerveVisualization visualization;
 	private final Vector2[] module_locs;
-	private final DynamicsBuffer[] buffers = new DynamicsBuffer[4];
+	private final DynamicsBuffer[] buffers = new DynamicsBuffer[4];		// 4 --> # of samples to dynamics within RK4 integration
 	private final int SIZE;
 	private final NX N_INPUTS, N_STATES;
 	private double STATIC_MASS;
 
 	private final Matrix<NX, N1> u_inputs;
 	private Matrix<NX, N1> x_states, y_outputs;
+	private DynamicsBuffer static_buff = null;
 
 
 	public SwerveSimulator(SimConfig config, SwerveModule... modules) {
@@ -237,20 +228,25 @@ public class SwerveSimulator implements RecursiveSendable {
 			genDebugWrapper(this::dynamics, dt_seconds, dbarr), this.x_states, this.u_inputs, dt_seconds);
 		this.y_outputs = x_states.copy();
 	}
-	/** Update each module's feedback data. */
-	public synchronized void updateSimHW() {
+	/** Synchronize each module's hardware simulation properties with the internal stored state. */
+	public synchronized void applyStates() {
 		for(int i = 0; i < this.SIZE; i++) {
-			this.updateModuleSim(this.modules[i], i);
+			this.modules[i].setSimulatedSteeringAngle(	State.SteerAngle	.fromN(this.y_outputs, i) );
+			this.modules[i].setSimulatedSteeringRate(	State.SteerRate		.fromN(this.y_outputs, i) );
+			this.modules[i].setSimulatedWheelPosition(	State.DrivePosition	.fromN(this.y_outputs, i) );
+			this.modules[i].setSimulatedWheelVelocity(	State.DriveVelocity	.fromN(this.y_outputs, i) );
 		}
 	}
 	/** Integrate and update the states of the stored modules. If the states should not be updated (ex. not in sim mode), then only call integrate() */
 	public synchronized void update(double dt_seconds) {
 		this.integrate(dt_seconds);
-		this.updateSimHW();
+		this.applyStates();
 	}
 
-	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds)
-		{ return this.dynamics(x, u, dt_seconds, null); }
+	/** Simulation dynamics w/o an attached debug reference. */
+	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds) {
+		return this.dynamics(x, u, dt_seconds, null);
+	}
 	/** The simulation dynamics. Given a state, input, and timestep, compute the change in state. */
 	protected Matrix<NX, N1> dynamics(Matrix<NX, N1> x, Matrix<NX, N1> u, double dt_seconds, DynamicsBuffer buffer) {
 
@@ -276,7 +272,12 @@ public class SwerveSimulator implements RecursiveSendable {
 			PI2 = (Math.PI * 2.0);
 
 		// STEP 0A: Allocate buffers for delta, reset summations
-		if(buffer == null) { buffer = new DynamicsBuffer(this.SIZE); }
+		if(buffer == null) {
+			if(this.static_buff == null) {
+				this.static_buff = new DynamicsBuffer(this.SIZE);
+			}
+			buffer = this.static_buff;
+		}
 		final DynamicsBuffer db = buffer;
 		final Matrix<NX, N1>
 			x_prime = new Matrix<>(x.getStorage().createLike());
@@ -339,7 +340,7 @@ public class SwerveSimulator implements RecursiveSendable {
 		}
 		// STEP 1G: Total system linear and rotational momentum
 		db.lP_sys.set(db.lv_frame).times(db.lI_momentum);		// the momentum in frame coordinate space
-		db.rP_sys = db.rv_frame * db.rI_momentum;						// the rotational momenum is abstract?
+		db.rP_sys = db.rv_frame * db.rI_momentum;				// the rotational momenum is abstract?
 
 		// STEP 2: Calculate friction (module iteration #2)
 		for(int i = 0; i < this.SIZE; i++) {
@@ -349,7 +350,7 @@ public class SwerveSimulator implements RecursiveSendable {
 			mb.F_ext.set(db.F_app)
 				.append( Vector2.invCross( db.Tq_app / this.SIZE, this.module_locs[i] ) );	// addition and cross product take place in frame coord space
 			mb.lv_ext.set(db.lv_frame)
-				.append( Vector2.cross( db.rv_frame, this.module_locs[i] ) );		// use a cache!!! -- see 347
+				.append( Vector2.cross( db.rv_frame, this.module_locs[i] ) );		// use a cache!!! -- see 17 lines up^
 		// STEP 2B(xN): Split Fn vector into components that are aligned with the wheel's heading
 			mb.F_ext_para = Vector2.dot( wheel_vec, mb.F_ext );
 			mb.F_ext_poip = Vector2.cross( wheel_vec, mb.F_ext );
@@ -594,6 +595,7 @@ public class SwerveSimulator implements RecursiveSendable {
 		private int ptr = 0;
 
 		public ArrayIterator(T[] arr) { this.arr = arr; }
+
 
 		public void reset() {
 			this.ptr = 0;

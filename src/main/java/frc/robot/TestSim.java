@@ -8,6 +8,8 @@ import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.util.sendable.SendableBuilder;
 import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.math.controller.SimpleMotorFeedforward;
+import edu.wpi.first.math.controller.PIDController;
 
 import frc.robot.swerve.*;
 import frc.robot.swerve.SwerveUtils.*;
@@ -36,7 +38,7 @@ public class TestSim extends CommandBase {
 				.addGear(2e-5, 0.0, 14)
 				.addGear(5.382e-5, 0.0, 50)
 				.addDualGear(7.389e-5, 50, 27)
-				.addDualGear(2e-5, 19, 15)
+				.addDualGear(2e-5, 17, 15)
 				.addGear(4.416e-4, WHEEL_RADIUS, 45);		// the radius is the wheel's radius
 		private static final FrictionModel
 			// steer_motor_frict,	// this is a bit extra but physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
@@ -134,7 +136,17 @@ public class TestSim extends CommandBase {
 	}
 	public static class TestModule extends SwerveModule {
 
-		private double va, vb;
+		private static SimpleMotorFeedforward
+			steer_ff = new SimpleMotorFeedforward(1, 1, 1),
+			drive_ff = new SimpleMotorFeedforward(1, 1, 1);
+		private double
+			va, vb,
+			theta, target_theta,
+			omega, target_omega,
+			lx_wheel, lv_wheel,
+			target_lv, target_la;
+		private boolean
+			stopped = false;
 
 		public TestModule(Translation2d location) {
 			super(location);
@@ -147,13 +159,26 @@ public class TestSim extends CommandBase {
 
 		@Override
 		public void setState(double linear_vel, double steer_angle_rad, double linear_acc, double steer_angular_vel) {
-			this.va = steer_angular_vel;
-			this.vb = linear_vel;
+			if(Math.abs(this.theta - steer_angle_rad) > Math.PI / 2) {
+				steer_angle_rad += Math.PI;
+				steer_angle_rad %= (Math.PI * 2);
+				linear_vel *= -1;
+			}
+			this.target_theta = steer_angle_rad;
+			this.target_omega = steer_angular_vel;
+			this.target_lv = linear_vel;
+			this.target_la = linear_acc;
+			this.stopped = false;
 		}
 		@Override
-		public double getSteeringAngle() { return 0.0; }
+		public void stop() {
+			this.va = this.vb = 0.0;
+			this.stopped = true;
+		}
 		@Override
-		public double getWheelDisplacement() { return 0.0; }
+		public double getSteeringAngle() { return this.theta; }
+		@Override
+		public double getWheelDisplacement() { return this.lx_wheel; }
 		@Override
 		public double getMotorAVolts() { return this.va; }
 		@Override
@@ -161,13 +186,33 @@ public class TestSim extends CommandBase {
 		@Override
 		public SwerveModuleModel getSimProperties() { return TestModuleModel.inst; }
 		@Override
-		public void setSimulatedSteeringAngle(double angle) {}
+		public void setSimulatedSteeringAngle(double theta) { this.theta = theta; }
 		@Override
-		public void setSimulatedSteeringRate(double omega) {}
+		public void setSimulatedSteeringRate(double omega) { this.omega = omega; }
 		@Override
-		public void setSimulatedWheelPosition(double angle) {}
+		public void setSimulatedWheelPosition(double x) { this.lx_wheel = x; }
 		@Override
-		public void setSimulatedWheelVelocity(double omega) {}
+		public void setSimulatedWheelVelocity(double v) { this.lv_wheel = v; }
+
+		@Override
+		public void periodic(double dt) {
+
+			if(!this.stopped) {
+
+				final double
+					v_ff_steer = steer_ff.calculate(this.omega, this.target_omega, dt),
+					v_fb_steer = 0.0,
+					v_ff_drive = drive_ff.calculate(this.target_lv, this.target_la),
+					v_fb_drive = 0.0;
+				
+				this.setVoltage(
+					v_ff_steer + v_fb_steer,
+					v_ff_drive + v_fb_drive
+				);
+
+			}
+
+		}
 
 
 	}
@@ -242,11 +287,11 @@ public class TestSim extends CommandBase {
 			this.robot_vec.angular_velocity * dt
 		));
 
-		// for(int i = 0; i < this.modules.length; i++) {
-		// 	this.modules[i].setState(this.wheel_states[i]);
-		// }
-		this.modules[0].setVoltage(vy, vx);
-		this.modules[1].setVoltage(vtheta, vx);
+		for(int i = 0; i < this.modules.length; i++) {
+			this.modules[i].setState(this.wheel_states[i]);
+		}
+		// this.modules[0].setVoltage(vy, vx);
+		// this.modules[1].setVoltage(vtheta, vx);
 
 	}
 
@@ -258,7 +303,7 @@ public class TestSim extends CommandBase {
 	@Override
 	public void end(boolean i) {
 		for(TestModule m : this.modules) {
-			m.setVoltage(0.0, 0.0);
+			m.stop();
 		}
 	}
 

@@ -49,6 +49,7 @@ public class Robot extends TimedRobot {
 			this.sim_nt.putData("Test Simulation", t.simulator);
 			this.addPeriodic(()->{
 					t.simulator.integrate_D(0.005);
+					t.simulator.applyStates();
 					this.sim_nt.updateValues();
 				}, 0.005);
 			// this.addPeriodic(()->System.out.println(t.getSim()), 5.0);
