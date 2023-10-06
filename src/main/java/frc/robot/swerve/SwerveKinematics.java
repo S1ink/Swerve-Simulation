@@ -52,7 +52,7 @@ public final class SwerveKinematics {
 		// remember to make buffer to ensure that if the robot isn't moving, the kineamics should stay the same
 		// setting wheels to x state
 
-		if(this.stored_recenter.equals(recenter)) {
+		if(!this.stored_recenter.equals(recenter)) {
 
 			for(int i = 0; i < this.SIZE; i++) {
 				final double
@@ -101,7 +101,7 @@ public final class SwerveKinematics {
 				sin = angle.getSin(),
 				cos = angle.getCos(),
 				a = cos * x_a + sin * y_a,
-				omega = (-sin * x_a + cos * y_a) / v;
+				omega = v == 0 ? 0 : (-sin * x_a + cos * y_a) / v;
 
 			this.stored_states[i] = SwerveModuleStates.makeSecondOrder(angle, v, omega, a);
 		}

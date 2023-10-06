@@ -32,24 +32,23 @@ public class Robot extends TimedRobot {
 		this.controls.setAmbiguousSolution(ControlSchemeManager.AmbiguousSolution.PREFER_COMPLEX);
 		this.controls.setDefault("Xbox Sim Drive", (InputDevice... inputs)->{
 			final InputDevice xbox = inputs[0];
-			TestSim.TestSim2 t;
+			TestSim t;
 			TeleopTrigger.makeWithLoop(this.eloop).onTrue(
 				Util.send(
-					(t = new TestSim.TestSim2(
-						Xbox.Analog.RY.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+					(t = new TestSim(
 						Xbox.Analog.RX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
-						Xbox.Analog.LY.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+						Xbox.Analog.RY.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
 						Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
-						new DriveInputSupplier(Input.XMinusY(Xbox.Analog.RT, Xbox.Analog.LT, xbox), 0.05, -12.0, 1.0),
+						// Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+						// new DriveInputSupplier(Input.XMinusY(Xbox.Analog.RT, Xbox.Analog.LT, xbox), 0.05, -12.0, 1.0),
 						SwerveUtils.makeSquareLocationsCW(0.263525)
 					)),
 					this.robot_nt, "Test Sim"
 				)
 			);
-			this.sim_nt.putData("Test Simulation", t.simulator);
+			this.sim_nt.putData("Test Simulation", t.getSim());
 			this.addPeriodic(()->{
-					t.simulator.integrate_D(0.005);
-					t.simulator.applyStates();
+					t.periodic(0.005);
 					this.sim_nt.updateValues();
 				}, 0.005);
 			// this.addPeriodic(()->System.out.println(t.getSim()), 5.0);
