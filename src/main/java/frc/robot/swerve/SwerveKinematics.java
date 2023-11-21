@@ -17,24 +17,24 @@ public final class SwerveKinematics {
 		inv_kinematics, fwd_kinematics,
 		inv_kinematics2, fwd_kinematics2;
 	protected final int SIZE;
-	protected SwerveModuleStates[]
-		stored_states;
+	protected static Translation2d
+		no_recenter = new Translation2d();
 	protected Translation2d
-		stored_recenter = new Translation2d();
+		stored_recenter = no_recenter;
 
 
 	public SwerveKinematics(Translation2d... locations) {
 
 		this.SIZE = locations.length;
 		this.module_locations = locations;
-		this.stored_states = new SwerveModuleStates[this.SIZE];
-		Arrays.fill(this.stored_states, new SwerveModuleStates());
 
 		this.inv_kinematics = new SimpleMatrix(this.SIZE * 2, 3);
 		this.inv_kinematics2 = new SimpleMatrix(this.SIZE * 2, 4);
 
 		for(int i = 0; i < this.SIZE; i++) {
-			final double x = this.module_locations[i].getX(), y = this.module_locations[i].getY();
+			final double
+				x = this.module_locations[i].getX(),
+				y = this.module_locations[i].getY();
 			this.inv_kinematics.setRow(i * 2 + 0, 0, 1, 0, -y);
 			this.inv_kinematics.setRow(i * 2 + 1, 0, 0, 1, +x);
 			this.inv_kinematics2.setRow(i * 2 + 0, 0, 1, 0, -x, -y);
@@ -47,7 +47,11 @@ public final class SwerveKinematics {
 	}
 
 
-	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, Translation2d recenter) {
+	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, SwerveModuleStates[] output) {
+		return this.toModuleStates(robot_state, output, no_recenter);
+	}
+
+	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, SwerveModuleStates[] output, Translation2d recenter) {
 
 		// remember to make buffer to ensure that if the robot isn't moving, the kineamics should stay the same
 		// setting wheels to x state
@@ -86,8 +90,10 @@ public final class SwerveKinematics {
 		final SimpleMatrix
 			first_order_states = this.inv_kinematics.mult(first_order_inputs),
 			second_order_states = this.inv_kinematics2.mult(second_order_inputs);
-		
-		this.stored_states = new SwerveModuleStates[this.SIZE];
+
+		if(output == null || output.length < this.SIZE) {
+			output = new SwerveModuleStates[this.SIZE];
+		}
 		for(int i = 0; i < this.SIZE; i++) {
 			final double
 				x_v = first_order_states.get(i * 2 + 0, 0),
@@ -101,23 +107,21 @@ public final class SwerveKinematics {
 				sin = angle.getSin(),
 				cos = angle.getCos(),
 				a = cos * x_a + sin * y_a,
-				omega = v == 0 ? 0 : (-sin * x_a + cos * y_a) / v;
+				omega = (v == 0) ? 0 : ((-sin * x_a + cos * y_a) / v);
 
-			this.stored_states[i] = SwerveModuleStates.makeSecondOrder(angle, v, omega, a);
+			output[i] = SwerveModuleStates.makeSecondOrder(angle, v, omega, a);
 		}
 
-		return this.stored_states;
+		return output;
 
-	}
-
-	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state) {
-		return this.toModuleStates(robot_state, new Translation2d());
 	}
 
 
 	public ChassisStates toChassisStates(SwerveModuleStates... states) {
 
-		// might need to check length of states
+		if(states.length < this.SIZE) {
+			return null;
+		}
 
 		final SimpleMatrix
 			module_states_order1 = new SimpleMatrix(this.SIZE * 2, 1),

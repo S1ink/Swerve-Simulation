@@ -146,7 +146,6 @@ public class SwerveSimulator implements RecursiveSendable {
 
 	private final Matrix<NX, N1> u_inputs;
 	private Matrix<NX, N1> x_states, y_outputs;
-	private DynamicsBuffer static_buff = null;
 
 
 	public SwerveSimulator(SimConfig config, SwerveModule... modules) {
@@ -273,10 +272,10 @@ public class SwerveSimulator implements RecursiveSendable {
 
 		// STEP 0A: Allocate buffers for delta, reset summations
 		if(buffer == null) {
-			if(this.static_buff == null) {
-				this.static_buff = new DynamicsBuffer(this.SIZE);
+			if(this.buffers[this.buffers.length - 1] == null) {
+				this.buffers[this.buffers.length - 1] = new DynamicsBuffer(this.SIZE);	// use the last buffer since the last call will be the last overwrite
 			}
-			buffer = this.static_buff;
+			buffer = this.buffers[this.buffers.length - 1];
 		}
 		final DynamicsBuffer db = buffer;
 		final Matrix<NX, N1>
@@ -302,17 +301,18 @@ public class SwerveSimulator implements RecursiveSendable {
 		// STEP 1: Module iteration #1
 		for(int i = 0; i < this.SIZE; i++) {
 			final DynamicsBuffer.ModuleBuffer mb = db.modn(i);
+			final Vector2 lv_tangent = Vector2.cross( db.rv_frame, this.module_locs[i] );	// the tangential velocity from angular velocity for the module
 		// STEP 1A(xN): Extract module states
 			mb.volts_a = u.get(i * 2, 0);
 			mb.volts_b = u.get(i * 2 + 1, 0);
 			mb.rx_steer = State.SteerAngle.fromN(x, i) % PI2;		// the steer angle in the frames's coordinate system
 			mb.rv_steer = State.SteerRate.fromN(x, i);				// the steer rate from the frame's reference
-			// mb.lv_wheel = State.DriveVelocity.fromN(x, i),		// the linear velocity of the module from the module's reference
+			mb.lv_ext
+				.set(db.lv_frame)
+				.append(lv_tangent);								// the linear velocity of the module in the frame's reference
+			// mb.lv_wheel = State.DriveVelocity.fromN(x, i),		// the (wheel) linear velocity of the module from the module's reference
 			mb.lv_wheel = Vector2
-				.add( db.lv_frame,
-					Vector2.cross( db.rv_frame, this.module_locs[i] ) )		// compute based on frame velocity for better results compared to ^
-				.rotate(-mb.rx_steer)
-				.x();
+				.angleComponent( mb.lv_ext, mb.rx_steer );	// compute based on frame velocity for better results compared to ^
 		// STEP 1B(xN): Initial module property calculations
 			mb.ra_steer = this.module_models[i]
 				.steerAAccel( mb.volts_a, mb.volts_b, mb.rv_steer, mb.lv_wheel, F_norm_z, dt_seconds );
@@ -324,22 +324,24 @@ public class SwerveSimulator implements RecursiveSendable {
 			State.DrivePosition.setN(x_prime, i, mb.lv_wheel);
 
 		// STEP 1D(xN): Wheel force vector
-			mb.F_src_vec = Vector2.fromPolar(mb.F_src_mag, mb.rx_steer);	// the wheel force vector in the frame's coordinate system
+			mb.F_src_vec = Vector2
+				.fromPolar(mb.F_src_mag, mb.rx_steer);		// the wheel force vector in the frame's coordinate system
 		// STEP 1E(xN): Sum the system's applicant force and torque, store headings
 			db.F_app.append(mb.F_src_vec);
-			db.Tq_app += this.module_locs[i].cross(mb.F_src_vec);			// the cross product takes place in the frame's coordinate system
+			db.Tq_app += this.module_locs[i]
+				.cross(mb.F_src_vec);			// the cross product takes place in the frame's coordinate system
 		// STEP 1F(xN): Sum the system's linear and rotational momentum based on the direction of these velocities (includes wheel geartrain inertia)
 			db.lI_momentum += this.module_models[i]
 				.effectiveLinearInertia( (db.rx_frame_lv - mb.rx_steer) );	// <-- the difference occurs in the frame coordinate system
 			db.rI_momentum += this.module_models[i]
 				.effectiveRotationalInertia(
-					( Vector2.cross( db.rv_frame, this.module_locs[i] )
-						.theta() - mb.rx_steer ),
+					lv_tangent.theta() - mb.rx_steer,
 					this.module_locs[i].norm() );	// <-- also in frame coordinate system because module_locs[] is frame local while omega is abstract
-					// ^^^ this calculation should be cached since it is used later!
 		}
 		// STEP 1G: Total system linear and rotational momentum
-		db.lP_sys.set(db.lv_frame).times(db.lI_momentum);		// the momentum in frame coordinate space
+		db.lP_sys
+			.set(db.lv_frame)
+			.times(db.lI_momentum);		// the momentum in frame coordinate space
 		db.rP_sys = db.rv_frame * db.rI_momentum;				// the rotational momenum is abstract?
 
 		// STEP 2: Calculate friction (module iteration #2)
@@ -347,10 +349,11 @@ public class SwerveSimulator implements RecursiveSendable {
 			final DynamicsBuffer.ModuleBuffer mb = db.modn(i);
 			final Vector2 wheel_vec = Vector2.fromPolar( 1.0, mb.rx_steer );	// unit vector in the wheel fwd direction -- in field coord space
 		// STEP 2A(xN): Calc the force component acting at the module's CG
-			mb.F_ext.set(db.F_app)
-				.append( Vector2.invCross( db.Tq_app / this.SIZE, this.module_locs[i] ) );	// addition and cross product take place in frame coord space
-			mb.lv_ext.set(db.lv_frame)
-				.append( Vector2.cross( db.rv_frame, this.module_locs[i] ) );		// use a cache!!! -- see 17 lines up^
+			mb.F_ext
+				.set(db.F_app)
+				.append( Vector2
+					.invCross( db.Tq_app / this.SIZE, this.module_locs[i] ) );	// addition and cross product take place in frame coord space
+			// >> previously set lv_ext here --> cached in first loop
 		// STEP 2B(xN): Split Fn vector into components that are aligned with the wheel's heading
 			mb.F_ext_para = Vector2.dot( wheel_vec, mb.F_ext );
 			mb.F_ext_poip = Vector2.cross( wheel_vec, mb.F_ext );
@@ -361,16 +364,20 @@ public class SwerveSimulator implements RecursiveSendable {
 			mb.F_frict_poip = this.module_models[i]
 				.wheelSideFriction( F_norm_z, mb.F_ext_poip, mb.lv_side, dt_seconds );
 		// STEP 2D(xN): Combine friction components into a single vector
-			mb.F_frict_sum.set( mb.F_frict_para, mb.F_frict_poip )
+			mb.F_frict_sum
+				.set( mb.F_frict_para, mb.F_frict_poip )
 				.rotate( mb.rx_steer );
 		// STEP 2E(xN): Append to total friction and torque vectors
 			db.F_frict.append(mb.F_frict_sum);
-			db.Tq_frict += this.module_locs[i].cross(mb.F_frict_sum);
+			db.Tq_frict += this.module_locs[i]
+				.cross(mb.F_frict_sum);
 		}
 
 		// STEP 3: Sum the applicant and friction force/torque such that the momentum does not change direction because of friction
-		db.F_sys.set( Vector2.applyFriction( db.F_app, db.lP_sys, db.F_frict, dt_seconds ) );	// the net linear force vector in frame coord space
-		db.Tq_sys = FrictionModel.applyFriction( db.Tq_app, db.rP_sys, db.Tq_frict, dt_seconds );
+		db.F_sys.set( Vector2
+			.applyFriction( db.F_app, db.lP_sys, db.F_frict, dt_seconds ) );	// the net linear force vector in frame coord space
+		db.Tq_sys = FrictionModel
+			.applyFriction( db.Tq_app, db.rP_sys, db.Tq_frict, dt_seconds );
 		db.rx_f_sys = db.F_sys.theta();		// the angle of net linear force in frame coord space
 
 		// STEP 4: Sum the system inertias based on the direction of net force/torque
@@ -378,13 +385,20 @@ public class SwerveSimulator implements RecursiveSendable {
 		db.rI_sys = this.config.ROBOT_RI;
 		for(int i = 0; i < this.SIZE; i++) {
 			final DynamicsBuffer.ModuleBuffer mb = db.modn(i);
-			db.lI_sys += this.module_models[i].effectiveLinearInertia( (db.rx_f_sys - mb.rx_steer) );	// OK -- both in frame coord system
-			db.rI_sys += this.module_models[i].effectiveRotationalInertia(
-				(Vector2.cross( db.Tq_sys, this.module_locs[i] ).theta() - mb.rx_steer), this.module_locs[i].norm() );	// add these as items in the buffer so we can see individual module inertias
+			db.lI_sys += this.module_models[i]
+				.effectiveLinearInertia( (db.rx_f_sys - mb.rx_steer) );	// OK -- both in frame coord system
+			db.rI_sys += this.module_models[i]
+				.effectiveRotationalInertia(
+					(Vector2
+						.cross( db.Tq_sys, this.module_locs[i] )
+						.theta() - mb.rx_steer),
+					this.module_locs[i].norm() );	// add these as items in the buffer so we can see individual module inertias
 		}
 
 		// STEP 5: System linear and rotational acceleration
-		db.la_sys.set(db.F_sys).div(db.lI_sys);		// the net linear acceleration vector in frame coordinate space
+		db.la_sys
+			.set(db.F_sys)
+			.div(db.lI_sys);		// the net linear acceleration vector in frame coordinate space
 		db.ra_sys = db.Tq_sys / db.rI_sys;			// the net angular acceleration (abstract reference)
 
 		// STEP 6: Fill x_prime
@@ -394,7 +408,7 @@ public class SwerveSimulator implements RecursiveSendable {
 			mb.la_ext.set(db.la_sys)	// the linear acceleration in frame coord space
 				.append( Vector2.cross( db.ra_sys, this.module_locs[i] ) )		// the component of acceleration from adding linear and angular static -- frame coord sys operations
 				.sub( Vector2.mult( this.module_locs[i], (db.rv_frame * db.rv_frame) ) );			// the component from centripetal due to angular velocity -- frame coord sys because normalized to module_locs[]
-			State.DriveVelocity.setN( x_prime, i, Vector2.rotate(mb.la_ext, -mb.rx_steer).x() );	// <-- rotate the vector to be in wheel/module reference and take the x(fwd) component as the wheel's acceleration
+			State.DriveVelocity.setN( x_prime, i, Vector2.angleComponent( mb.la_ext, mb.rx_steer ) );	// <-- rotate the vector to be in wheel/module reference and take the x(fwd) component as the wheel's acceleration
 		}
 		// STEP 6B: Convert linear acceleration from frame reference back to field reference because we want to keep track of the robot relative to the field, not relative to itself
 		db.la_field = db.la_sys.rotate(db.rx_frame);		// convert back to field coordinate space
@@ -607,7 +621,7 @@ public class SwerveSimulator implements RecursiveSendable {
 		}
 		@Override
 		public T next() {
-			return this.hasNext() ? this.arr[this.ptr++] : this.arr[this.arr.length - 1];
+			return this.hasNext() ? this.arr[this.ptr++] : null;
 		}
 
 	}

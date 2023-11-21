@@ -38,7 +38,7 @@ public abstract class SwerveModule implements Sendable {
 	/** Get the steering angle in radians. The coord system begins pointing forward (robot front) and is CCW+ (unit circle) */
 	abstract public double getSteeringAngle();
 	/** Get the wheel's linear displacement in meters (takes into account the radius of the wheel). Positive values represent forward displacement. */
-	abstract public double getWheelDisplacement();	// << LINEAR NOT ANGULAR
+	abstract public double getWheelDisplacement();		// << LINEAR NOT ANGULAR
 	/** Get the steering angular velocity in radians per second */
 	public double getSteeringRate() { return 0.0; }
 	/** Get the wheel's linear velocity in meters per second */

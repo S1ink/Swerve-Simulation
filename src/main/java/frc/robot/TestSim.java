@@ -141,10 +141,10 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 
 		private static SimpleMotorFeedforward
 			steer_ff = new SimpleMotorFeedforward(0, 1, 0),
-			drive_ff = new SimpleMotorFeedforward(0, 0, 0);
-		private static PIDController
-			steer_pid = new PIDController(0, 0, 0),
-			drive_pid = new PIDController(0, 0, 0);
+			drive_ff = new SimpleMotorFeedforward(0, 1, 0);
+		private PIDController
+			steer_pid = new PIDController(1, 0, 0),
+			drive_pid = new PIDController(1, 0, 0);
 		private double
 			va, vb,
 			theta, target_theta,
@@ -235,10 +235,10 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 			b.addDoubleProperty("Motor B Volts", ()->this.vb, null);
 			b.addStringProperty("Error Code", ()->Integer.toBinaryString(this.error_state), null);
 			b.addDoubleArrayProperty("States", ()->new double[]{
-				this.theta, this.target_theta,
-				this.omega, this.target_omega,
-				this.lx_wheel, this.lv_wheel,
-				this.target_lv, this.target_la
+				this.theta, this.omega, this.lx_wheel, this.lv_wheel
+			}, null);
+			b.addDoubleArrayProperty("Target States", ()->new double[]{
+				this.target_theta, this.target_omega, this.target_lv, this.target_la
 			}, null);
 		}
 
@@ -258,7 +258,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	private final SwerveSimulator simulator;
 
 	private final DoubleSupplier x_speed, y_speed, turn_speed;	// in meters per second and degrees per second
-	private Pose2d robot_pose2d = new Pose2d();
+	private Pose2d direct_pose2d = new Pose2d(), odo_pose2d = new Pose2d();
 	private Timer timer = new Timer();
 	private ChassisStates robot_vec = new ChassisStates();
 
@@ -297,7 +297,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 
 	@Override
 	public void initialize() {
-		this.robot_vec = new ChassisStates();
+		this.robot_vec.zero();
 		this.timer.reset();
 		this.timer.start();
 	}
@@ -315,13 +315,11 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 			vtheta = turn_speed.getAsDouble();
 
 		ChassisStates.accFromDelta(this.robot_vec, new ChassisStates(vx, vy, vtheta), dt, this.robot_vec);
-		this.wheel_states = this.kinematics.toModuleStates(this.robot_vec);
+		this.kinematics.toModuleStates(this.robot_vec, this.wheel_states);
+		ChassisStates back = this.kinematics.toChassisStates(this.wheel_states);
 
-		this.robot_pose2d = this.robot_pose2d.exp(new Twist2d(
-			this.robot_vec.x_velocity * dt,
-			this.robot_vec.y_velocity * dt,
-			this.robot_vec.angular_velocity * dt
-		));
+		this.direct_pose2d = this.direct_pose2d.exp(this.robot_vec.integrate(dt));
+		this.odo_pose2d = this.odo_pose2d.exp(back.integrate(dt));
 
 		for(int i = 0; i < this.modules.length; i++) {
 			this.modules[i].setState(this.wheel_states[i]);
@@ -347,7 +345,8 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	public void initSendable(SendableBuilder builder) {
 		// builder.addDoubleProperty("A Volts", this.turn_speed, null);
 		// builder.addDoubleProperty("B Volts", this.x_speed, null);
-		builder.addDoubleArrayProperty("Robot Pose", ()->Util.toComponents2d(this.robot_pose2d), null);
+		builder.addDoubleArrayProperty("Robot Pose", ()->Util.toComponents2d(this.direct_pose2d), null);
+		builder.addDoubleArrayProperty("Integrated Pose", ()->Util.toComponents2d(this.odo_pose2d), null);
 		builder.addDoubleArrayProperty("Wheel Poses", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.wheel_states)), null);
 		builder.addDoubleArrayProperty("Wheel Vectors", ()->SwerveVisualization.getVecComponents2d(this.wheel_states), null);
 	}
@@ -356,6 +355,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	public void initRecursive(SenderNT inst, String base) {
 
 		inst.putData(base, (Sendable)this);
+		inst.putData(base + "/Chassis State", this.robot_vec);
 		for(int i = 0; i < this.modules.length; i++) {
 			inst.putData(String.format("%s/Module[%d]", base, i), this.modules[i]);
 		}

@@ -6,13 +6,15 @@ import org.ejml.simple.SimpleMatrix;
 
 import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
+import edu.wpi.first.util.sendable.Sendable;
+import edu.wpi.first.util.sendable.SendableBuilder;
 
 
 /** SwerveUtils holds many utility classes used for swerve control/simulation */
 public final class SwerveUtils {
 
 	/** ChassisStates represents the robot's 1st and 2nd order movement in the robot coordinate system (by default). */
-	public static class ChassisStates {
+	public static class ChassisStates implements Sendable {
 		
 		public double
 			x_velocity,
@@ -33,6 +35,27 @@ public final class SwerveUtils {
 			this.x_acceleration = x_a;
 			this.y_acceleration = y_a;
 			this.angular_acceleration = r_a;
+		}
+
+
+		public void zero() {
+			this.x_velocity
+				= this.y_velocity
+				= this.angular_velocity
+				= this.x_acceleration
+				= this.y_acceleration
+				= this.angular_acceleration
+				= 0;
+		}
+		public Twist2d integrate(double dt) {
+			return this.integrate(dt, null);
+		}
+		public Twist2d integrate(double dt, Twist2d buff) {
+			if(buff == null) { buff = new Twist2d(); }
+			buff.dx = this.x_velocity * dt;
+			buff.dy = this.y_velocity * dt;
+			buff.dtheta = this.angular_velocity * dt;
+			return buff;
 		}
 
 		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
@@ -66,13 +89,24 @@ public final class SwerveUtils {
 		/** Populate the ChassisStates' second order properties using deltas between 2 of the 1st order properties and a delta time. */
 		public static ChassisStates accFromDelta(ChassisStates from, ChassisStates to, double dt, ChassisStates buff) {
 			if(buff == null) { buff = new ChassisStates(); }
+			buff.x_acceleration = (to.x_velocity - from.x_velocity) / dt;
+			buff.y_acceleration = (to.y_velocity - from.y_velocity) / dt;
+			buff.angular_acceleration = (to.angular_velocity - from.angular_velocity) / dt;
 			buff.x_velocity = to.x_velocity;
 			buff.y_velocity = to.y_velocity;
 			buff.angular_velocity = to.angular_velocity;
-			buff.x_acceleration = (to.x_velocity - from.x_velocity) / dt;
-			buff.y_acceleration = (to.y_velocity - from.y_velocity) / dt;
-			buff.angular_acceleration = (to.angular_velocity - from.angular_acceleration) / dt;
 			return buff;
+		}
+
+
+		@Override
+		public void initSendable(SendableBuilder b) {
+			b.addDoubleProperty("X Velocity", ()->this.x_velocity, null);
+			b.addDoubleProperty("Y Velocity", ()->this.y_velocity, null);
+			b.addDoubleProperty("Angular Velocity", ()->this.angular_velocity, null);
+			b.addDoubleProperty("X Acceleration", ()->this.x_acceleration, null);
+			b.addDoubleProperty("Y Acceleration", ()->this.y_acceleration, null);
+			b.addDoubleProperty("Angular Acceleration", ()->this.angular_acceleration, null);
 		}
 
 	}
@@ -81,7 +115,7 @@ public final class SwerveUtils {
 
 	/** SwerveModuleStates has a bunch of information about the module's states
 	 * (not geographical states) -- can be in robot or field coordinate system depending on the context. */
-	public static class SwerveModuleStates {
+	public static class SwerveModuleStates implements Sendable {
 
 		public double
 			rotation,
@@ -184,6 +218,16 @@ public final class SwerveUtils {
 
 
 		// >> utilities for converting/acting on arrays of states <<
+
+
+		@Override
+		public void initSendable(SendableBuilder b) {
+			b.addDoubleProperty("Rotation", ()->this.rotation, null);
+			b.addDoubleProperty("Linear Displacement", ()->this.linear_displacement, null);
+			b.addDoubleProperty("Linear Velocity", ()->this.linear_velocity, null);
+			b.addDoubleProperty("Angular Velocity", ()->this.angular_velocity, null);
+			b.addDoubleProperty("Linear Acceleration", ()->this.linear_acceleration, null);
+		}
 
 
 	}

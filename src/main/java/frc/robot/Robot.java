@@ -36,8 +36,8 @@ public class Robot extends TimedRobot {
 			TeleopTrigger.makeWithLoop(this.eloop).onTrue(
 				Util.send(
 					(t = new TestSim(
-						Xbox.Analog.RX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
 						Xbox.Analog.RY.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+						Xbox.Analog.RX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
 						Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
 						// Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
 						// new DriveInputSupplier(Input.XMinusY(Xbox.Analog.RT, Xbox.Analog.LT, xbox), 0.05, -12.0, 1.0),
