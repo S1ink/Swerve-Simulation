@@ -47,10 +47,10 @@ public class Robot extends TimedRobot {
 				)
 			);
 			this.sim_nt.putData("Test Simulation", t.getSim());
-			this.addPeriodic(()->{
-					t.periodic(0.005);
-					this.sim_nt.updateValues();
-				}, 0.005);
+			// this.addPeriodic(()->{
+			// 		t.periodic(0.005);
+			// 		this.sim_nt.updateValues();
+			// 	}, 0.005);
 			// this.addPeriodic(()->System.out.println(t.getSim()), 5.0);
 		}, this.eloop::clear, Xbox.Map);
 

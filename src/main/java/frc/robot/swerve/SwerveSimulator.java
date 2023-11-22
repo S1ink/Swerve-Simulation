@@ -483,8 +483,10 @@ public class SwerveSimulator implements RecursiveSendable {
 
 
 
+	/** DynamicsBuffer contains all the temporary states used within a dynamics iteration. */
 	private static class DynamicsBuffer implements RecursiveSendable {
 
+		/** ModuleBuffer contains all the temporary for a single module within a dynamics iteration. */
 		public static class ModuleBuffer implements Sendable {
 
 			public Vector2

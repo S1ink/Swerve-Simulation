@@ -14,8 +14,8 @@ public final class SwerveKinematics {
 	protected final Translation2d[]
 		module_locations;
 	protected final SimpleMatrix
-		inv_kinematics, fwd_kinematics,
-		inv_kinematics2, fwd_kinematics2;
+		inv_kinematics, inv_kinematics2,
+		fwd_kinematics, fwd_kinematics2;
 	protected final int SIZE;
 	protected static Translation2d
 		no_recenter = new Translation2d();
@@ -52,9 +52,6 @@ public final class SwerveKinematics {
 	}
 
 	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, SwerveModuleStates[] output, Translation2d recenter) {
-
-		// remember to make buffer to ensure that if the robot isn't moving, the kineamics should stay the same
-		// setting wheels to x state
 
 		if(!this.stored_recenter.equals(recenter)) {
 
@@ -117,6 +114,7 @@ public final class SwerveKinematics {
 	}
 
 
+	/** The output linear velocities and accelerations are in the robot's coordinate space. */
 	public ChassisStates toChassisStates(SwerveModuleStates... states) {
 
 		if(states.length < this.SIZE) {
@@ -128,7 +126,7 @@ public final class SwerveKinematics {
 			module_states_order2 = new SimpleMatrix(this.SIZE * 2, 1);
 
 		for(int i = 0; i < this.SIZE; i++) {
-			SwerveModuleStates state = states[i];
+			final SwerveModuleStates state = states[i];
 			final double
 				lv = state.linear_velocity,
 				av = state.angular_velocity,
@@ -137,23 +135,23 @@ public final class SwerveKinematics {
 				cos = Math.cos(state.rotation),
 				la_x = (cos * la - sin * lv * av),
 				la_y = (sin * la + cos * lv * av);
-			module_states_order1.set(i * 2 + 0, 0, lv * sin);
-			module_states_order1.set(i * 2 + 1, 0, lv * cos);
+			module_states_order1.set(i * 2 + 0, 0, lv * cos);
+			module_states_order1.set(i * 2 + 1, 0, lv * sin);
 			module_states_order2.set(i * 2 + 0, 0, la_x);
 			module_states_order2.set(i * 2 + 1, 0, la_y);
 		}
 
 		final SimpleMatrix
-			chassis_states_order1 = this.fwd_kinematics.mult(module_states_order1),
-			chassis_states_order2 = this.fwd_kinematics2.mult(module_states_order2);
+			chassis_states_order1 = this.fwd_kinematics.mult(module_states_order1),		// first order states are (3x1)[vx, vy, omega]
+			chassis_states_order2 = this.fwd_kinematics2.mult(module_states_order2);	// second order states are (4x1)[ax, ay, omega^2, alpha]
 			
-		return new ChassisStates(
-			chassis_states_order1.get(0, 0),
-			chassis_states_order1.get(1, 0),
-			chassis_states_order1.get(2, 0),
-			chassis_states_order2.get(0, 0),
-			chassis_states_order2.get(1, 0),
-			chassis_states_order2.get(2, 0)
+		return new ChassisStates(	// output is from robot reference
+			chassis_states_order1.get(0, 0),	// vx
+			chassis_states_order1.get(1, 0),	// vy
+			chassis_states_order1.get(2, 0),	// omega
+			chassis_states_order2.get(0, 0),	// ax
+			chassis_states_order2.get(1, 0),	// ay
+			chassis_states_order2.get(3, 0)	// alpha
 		);
 
 	}

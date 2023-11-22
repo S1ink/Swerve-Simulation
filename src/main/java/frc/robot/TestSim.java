@@ -316,7 +316,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 
 		ChassisStates.accFromDelta(this.robot_vec, new ChassisStates(vx, vy, vtheta), dt, this.robot_vec);
 		this.kinematics.toModuleStates(this.robot_vec, this.wheel_states);
-		ChassisStates back = this.kinematics.toChassisStates(this.wheel_states);
+		ChassisStates back = this.kinematics.toChassisStates(this.wheel_states).toFieldRelative(this.odo_pose2d.getRotation().getRadians());
 
 		this.direct_pose2d = this.direct_pose2d.exp(this.robot_vec.integrate(dt));
 		this.odo_pose2d = this.odo_pose2d.exp(back.integrate(dt));

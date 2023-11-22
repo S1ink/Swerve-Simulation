@@ -36,6 +36,14 @@ public final class SwerveUtils {
 			this.y_acceleration = y_a;
 			this.angular_acceleration = r_a;
 		}
+		public ChassisStates(ChassisStates other) {
+			this.x_velocity = other.x_velocity;
+			this.y_velocity = other.y_velocity;
+			this.angular_velocity = other.angular_velocity;
+			this.x_acceleration = other.x_acceleration;
+			this.y_acceleration = other.y_acceleration;
+			this.angular_acceleration = other.angular_acceleration;
+		}
 
 
 		public void zero() {
@@ -47,6 +55,34 @@ public final class SwerveUtils {
 				= this.angular_acceleration
 				= 0;
 		}
+		public boolean isStopped() {
+			return (
+				this.x_velocity == 0 &&
+				this.y_velocity == 0 &&
+				this.angular_velocity == 0 &&
+				this.x_acceleration == 0 &&
+				this.y_acceleration == 0 &&
+				this.angular_acceleration == 0
+			);
+		}
+
+		public ChassisStates rotate(double radians) {
+			final double
+				sin = Math.sin(radians),
+				cos = Math.cos(radians);
+			this.x_velocity = this.x_velocity * cos - this.y_velocity * sin;
+			this.y_velocity = this.x_velocity * sin + this.y_velocity * cos;
+			this.x_acceleration = this.x_acceleration * cos - this.y_acceleration * sin;
+			this.y_acceleration = this.x_acceleration * sin + this.y_acceleration * cos;
+			return this;
+		}
+		public ChassisStates toFieldRelative(double robot_heading_rad) {
+			return this.rotate(robot_heading_rad);
+		}
+		public ChassisStates fromFieldRelative(double robot_heading_rad) {
+			return this.rotate(-robot_heading_rad);
+		}
+
 		public Twist2d integrate(double dt) {
 			return this.integrate(dt, null);
 		}
@@ -61,29 +97,23 @@ public final class SwerveUtils {
 		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
 		public static ChassisStates fromFieldRelative(
 			double x_v, double y_v, double r_v, double x_a, double y_a, double r_a,
-			Rotation2d robot_heading
+			double robot_heading_rad
 		) {
-			final double sin = robot_heading.getSin(), cos = robot_heading.getCos();
-			return new ChassisStates(
-				x_v * cos + y_v * sin,
-				x_v * -sin + y_v * cos,
-				r_v,
-				x_a * cos + y_a * sin,
-				x_a * -sin + y_a * cos,
-				r_a
-			);
+			return new ChassisStates( x_v, x_v, r_v, x_a, x_a, r_a ).fromFieldRelative(robot_heading_rad);
 		}
 		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
-		public static ChassisStates fromFieldRelative(ChassisStates states, Rotation2d robot_heading) {
-			return fromFieldRelative(
-				states.x_velocity,
-				states.y_velocity,
-				states.angular_velocity,
-				states.x_acceleration,
-				states.y_acceleration,
-				states.angular_acceleration,
-				robot_heading
-			);
+		public static ChassisStates fromFieldRelative(ChassisStates states, double robot_heading_rad) {
+			return new ChassisStates( states ).fromFieldRelative(robot_heading_rad);
+		}
+
+		public static ChassisStates rotate(ChassisStates states, double radians) {
+			return new ChassisStates( states ).rotate(radians);
+		}
+		public static ChassisStates rotate(
+			double x_v, double y_v, double r_v, double x_a, double y_a, double r_a,
+			double radians
+		) {
+			return new ChassisStates( x_v, x_v, r_v, x_a, x_a, r_a ).rotate(radians);
 		}
 
 		/** Populate the ChassisStates' second order properties using deltas between 2 of the 1st order properties and a delta time. */
