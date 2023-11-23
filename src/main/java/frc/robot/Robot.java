@@ -6,8 +6,11 @@ import javax.swing.filechooser.FileSystemView;
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.event.EventLoop;
+import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
-
+import edu.wpi.first.wpilibj2.command.InstantCommand;
+import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
+import edu.wpi.first.wpilibj2.command.button.Trigger;
 import frc.robot.team3407.commandbased.EventTriggers.TeleopTrigger;
 import frc.robot.team3407.controls.ControlSchemeManager;
 import frc.robot.team3407.controls.Input;
@@ -32,25 +35,43 @@ public class Robot extends TimedRobot {
 		this.controls.setAmbiguousSolution(ControlSchemeManager.AmbiguousSolution.PREFER_COMPLEX);
 		this.controls.setDefault("Xbox Sim Drive", (InputDevice... inputs)->{
 			final InputDevice xbox = inputs[0];
-			TestSim t;
-			TeleopTrigger.makeWithLoop(this.eloop).onTrue(
-				Util.send(
-					(t = new TestSim(
-						Xbox.Analog.RY.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
-						Xbox.Analog.RX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
-						Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
-						// Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
-						// new DriveInputSupplier(Input.XMinusY(Xbox.Analog.RT, Xbox.Analog.LT, xbox), 0.05, -12.0, 1.0),
-						SwerveUtils.makeSquareLocationsCW(0.263525)
-					)),
-					this.robot_nt, "Test Sim"
+			final TestSim t = Util.send(
+				new TestSim(
+					Xbox.Analog.RY.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+					Xbox.Analog.RX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+					Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+					// Xbox.Analog.LX.getDriveInputSupplier(xbox, 0.05, -2.0, 1.0),
+					// new DriveInputSupplier(Input.XMinusY(Xbox.Analog.RT, Xbox.Analog.LT, xbox), 0.05, -12.0, 1.0),
+					SwerveUtils.makeSquareLocationsCW(0.263525)
+				),
+				this.robot_nt, "Test Sim [Command]"
+			);
+			final CommandBase
+				steer_char = t.getSteerCharacterization(),
+				drive_char = t.getDriveCharacterization();
+			final Trigger enabled = TeleopTrigger.makeWithLoop(this.eloop);
+
+			enabled.onTrue(t);
+			enabled.and(Xbox.Digital.A.getPressedSupplier(xbox)).onTrue(
+				new SequentialCommandGroup(
+					new InstantCommand(()->t.cancel()),
+					steer_char.withTimeout(30),
+					new InstantCommand(()->t.schedule())
 				)
 			);
+			enabled.and(Xbox.Digital.B.getPressedSupplier(xbox)).onTrue(
+				new SequentialCommandGroup(
+					new InstantCommand(()->t.cancel()),
+					drive_char.withTimeout(30),
+					new InstantCommand(()->t.schedule())
+				)
+			);
+
 			this.sim_nt.putData("Test Simulation", t.getSim());
-			// this.addPeriodic(()->{
-			// 		t.periodic(0.005);
-			// 		this.sim_nt.updateValues();
-			// 	}, 0.005);
+			this.addPeriodic(()->{
+					t.periodic(0.005);
+					this.sim_nt.updateValues();
+				}, 0.005);
 			// this.addPeriodic(()->System.out.println(t.getSim()), 5.0);
 		}, this.eloop::clear, Xbox.Map);
 

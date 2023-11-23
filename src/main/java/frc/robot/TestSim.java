@@ -1,6 +1,8 @@
 package frc.robot;
 
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.function.DoubleSupplier;
 
 import edu.wpi.first.math.geometry.*;
@@ -140,10 +142,10 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	public static class TestModule extends SwerveModule {
 
 		private static SimpleMotorFeedforward
-			steer_ff = new SimpleMotorFeedforward(0, 1, 0),
-			drive_ff = new SimpleMotorFeedforward(0, 1, 0);
+			steer_ff = new SimpleMotorFeedforward(0.015, 0.28, 0),
+			drive_ff = new SimpleMotorFeedforward(0, 2.4, 0);
 		private PIDController
-			steer_pid = new PIDController(1, 0, 0),
+			steer_pid = new PIDController(0, 0, 0),
 			drive_pid = new PIDController(1, 0, 0);
 		private double
 			va, vb,
@@ -187,6 +189,10 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 		public double getSteeringAngle() { return this.theta; }
 		@Override
 		public double getWheelDisplacement() { return this.lx_wheel; }
+		@Override
+		public double getSteeringRate() { return this.omega; }
+		@Override
+		public double getWheelVelocity() { return this.lv_wheel; }
 		@Override
 		public double getMotorAVolts() { return this.va; }
 		@Override
@@ -256,6 +262,8 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	private final SwerveKinematics kinematics;
 	private final SwerveVisualization visualization;
 	private final SwerveSimulator simulator;
+	private final SwerveFFCharacterization<TestModule> characterization;
+	private final CommandBase steer_runner, drive_runner;
 
 	private final DoubleSupplier x_speed, y_speed, turn_speed;	// in meters per second and degrees per second
 	private Pose2d direct_pose2d = new Pose2d(), odo_pose2d = new Pose2d();
@@ -275,6 +283,9 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 		this.kinematics = new SwerveKinematics(modules);
 		this.visualization = new SwerveVisualization(modules);
 		this.simulator = new SwerveSimulator(this.visualization, SIM_CONFIG, TestModuleModel.inst, this.modules);
+		this.characterization = new SwerveFFCharacterization<>(this.modules);
+		this.steer_runner = this.characterization.steerCommand((TestModule m, double v)->m.setVoltage(v, 0.0));
+		this.drive_runner = this.characterization.driveCommand((TestModule m, double v)->m.setVoltage(0.0, v));
 
 		this.x_speed = xspeed;
 		this.y_speed = yspeed;
@@ -286,8 +297,10 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 
 
 	public SwerveSimulator getSim() { return this.simulator; }
+	public CommandBase getSteerCharacterization() { return this.steer_runner; }
+	public CommandBase getDriveCharacterization() { return this.drive_runner; }
 	public void periodic(double dt) {
-		this.simulator.integrate_D(dt);
+		this.simulator.integrate(dt);
 		this.simulator.applyStates();
 		for(SwerveModule m : this.modules) {
 			m.periodic(dt);
@@ -298,8 +311,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	@Override
 	public void initialize() {
 		this.robot_vec.zero();
-		this.timer.reset();
-		this.timer.start();
+		this.timer.restart();
 	}
 
 	@Override
@@ -324,8 +336,6 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 		for(int i = 0; i < this.modules.length; i++) {
 			this.modules[i].setState(this.wheel_states[i]);
 		}
-		// this.modules[0].setVoltage(vy, vx);
-		// this.modules[1].setVoltage(vtheta, vx);
 
 	}
 
@@ -359,6 +369,8 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 		for(int i = 0; i < this.modules.length; i++) {
 			inst.putData(String.format("%s/Module[%d]", base, i), this.modules[i]);
 		}
+		inst.putData(base + "/Steering Characterization", this.steer_runner);
+		inst.putData(base + "/Driving Characterization", this.drive_runner);
 
 	}
 
@@ -420,6 +432,170 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 			}
 		}
 
+
+	}
+
+
+
+	public static class SwerveFFCharacterization<Module_T extends SwerveModule> {
+
+		public static final double
+			DEFAULT_VOLTAGE_RAMP = 0.5,
+			DEFAULT_MAX_VOLTS = 12.0,
+			DEFAULT_VELOCITY_CUTOFF = 1e-3;
+
+		private final Module_T[] modules;
+		private double
+			voltage_ramp = DEFAULT_VOLTAGE_RAMP,
+			max_voltage = DEFAULT_MAX_VOLTS,
+			velocity_cutoff = DEFAULT_VELOCITY_CUTOFF;
+
+		public SwerveFFCharacterization(Module_T... modules) {
+			this.modules = modules;
+		}
+
+
+		public void setVoltageRamp(double volts_per_second) {
+			this.voltage_ramp = volts_per_second;
+		}
+		public void setMaxVoltage(double max_volts) {
+			this.max_voltage = max_volts;
+		}
+		public void setVelocityCutoff(double min_velocity) {
+			this.velocity_cutoff = Math.abs(min_velocity);
+		}
+
+		public CommandBase steerCommand(ModuleDoubleConsumer<? super Module_T> steer_voltage_setter) {
+			return new SteerCharacterization(steer_voltage_setter);
+		}
+		public CommandBase driveCommand(ModuleDoubleConsumer<? super Module_T> drive_voltage_setter) {
+			return new DriveCharacterization(drive_voltage_setter);
+		}
+
+
+		private class BaseCharacterization extends CommandBase {
+
+			protected final ModuleDoubleConsumer<? super Module_T> voltage_setter;
+			protected final ModuleDoubleSupplier<? super Module_T> voltage_getter, velocity_getter;
+			protected final List<Double>[]
+				voltages = new LinkedList[modules.length + 1],
+				velocities = new LinkedList[modules.length + 1];
+			protected final Timer timer = new Timer();
+			protected double
+				running_avg_volts = 0.0,
+				running_avg_vel = 0.0,
+				running_kS = 0.0,
+				running_kV = 0.0,
+				running_R2 = 0.0;
+
+			public BaseCharacterization(
+				ModuleDoubleConsumer<? super Module_T> v_set,
+				ModuleDoubleSupplier<? super Module_T> v_get,
+				ModuleDoubleSupplier<? super Module_T> vel_get
+			) {
+				this.voltage_setter = v_set;
+				this.voltage_getter = v_get;
+				this.velocity_getter = vel_get;
+				for(int i = 0; i < modules.length + 1; i++) {
+					this.voltages[i] = new LinkedList<>();
+					this.velocities[i] = new LinkedList<>();
+				}
+			}
+
+
+			@Override
+			public void initialize() {
+				System.out.println("Characterization Init!?");
+				this.timer.restart();
+			}
+			@Override
+			public void execute() {
+				final double volts = Util.clamp(timer.get() * voltage_ramp, -max_voltage, max_voltage);
+				double avg_voltage = 0.0, avg_velocity = 0.0;
+				for(int i = 0; i < modules.length; i++) {
+					final Module_T m = modules[i];
+					this.voltage_setter.set(m, volts);	// set voltage per module
+					final double
+						vlt = this.voltage_getter == null ? volts : this.voltage_getter.get(m),	// actual voltage per module
+						vel = this.velocity_getter.get(m);		// get the velocity
+					if(Math.abs(vel) > velocity_cutoff) {
+						this.voltages[i].add(vlt);
+						this.velocities[i].add(vel);
+					}
+					avg_voltage += vlt;
+					avg_velocity += vel;
+				}
+				this.running_avg_volts = (avg_voltage /= modules.length);
+				this.running_avg_vel = (avg_velocity /= modules.length);
+				if(Math.abs(avg_velocity) > velocity_cutoff) {
+					this.voltages[modules.length].add(avg_voltage);
+					this.velocities[modules.length].add(avg_velocity);
+				}
+				if(this.voltages[modules.length].size() > 1 && this.velocities[modules.length].size() > 1) {
+					PolynomialRegression p = new PolynomialRegression(
+						velocities[modules.length].stream().mapToDouble(Double::doubleValue).toArray(),
+						voltages[modules.length].stream().mapToDouble(Double::doubleValue).toArray(),
+						1
+					);
+					this.running_kS = p.beta(0);
+					this.running_kV = p.beta(1);
+					this.running_R2 = p.R2();
+				}
+			}
+			@Override
+			public void end(boolean i) {
+				System.out.println("Characterization End!?");
+				this.timer.stop();
+				for(Module_T m : modules) {
+					this.voltage_setter.set(m, 0.0);
+				}
+			}
+
+			@Override
+			public void initSendable(SendableBuilder b) {
+				b.addDoubleProperty("kS", ()->this.running_kS, null);
+				b.addDoubleProperty("kV", ()->this.running_kV, null);
+				b.addDoubleProperty("R-Squared", ()->this.running_R2, null);
+				b.addDoubleProperty("Average Output Voltage", ()->this.running_avg_volts, null);
+			}
+
+
+		}
+
+		protected class SteerCharacterization extends BaseCharacterization {
+
+			public SteerCharacterization(ModuleDoubleConsumer<? super Module_T> voltage_setter) {
+				super(
+					voltage_setter,
+					(Module_T m)->m.getMotorAVolts(),
+					(Module_T m)->m.getSteeringRate()
+				);
+			}
+
+			@Override
+			public void initSendable(SendableBuilder b) {
+				super.initSendable(b);
+				b.addDoubleProperty("Average Angular Velocity (radps)", ()->super.running_avg_vel, null);
+			}
+
+		}
+		protected class DriveCharacterization extends BaseCharacterization {
+
+			public DriveCharacterization(ModuleDoubleConsumer<? super Module_T> voltage_setter) {
+				super(
+					voltage_setter,
+					(Module_T m)->m.getMotorBVolts(),
+					(Module_T m)->m.getWheelVelocity()
+				);
+			}
+
+			@Override
+			public void initSendable(SendableBuilder b) {
+				super.initSendable(b);
+				b.addDoubleProperty("Average Linear Velocity (mps)", ()->super.running_avg_vel, null);
+			}
+
+		}
 
 	}
 

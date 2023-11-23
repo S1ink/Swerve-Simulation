@@ -13,6 +13,23 @@ import edu.wpi.first.util.sendable.SendableBuilder;
 /** SwerveUtils holds many utility classes used for swerve control/simulation */
 public final class SwerveUtils {
 
+	/** A static getter for a property of a specific module type. */
+	public static interface ModulePropertySupplier<Module_T extends SwerveModule, T> {
+		public T get(Module_T module);
+	}
+	/** A static setter for a property of a specific module type. */
+	public static interface ModulePropertyConsumer<Module_T extends SwerveModule, T> {
+		public void set(Module_T module, T value);
+	}
+	/** A static getter for a double property of a specific module type. */
+	public static interface ModuleDoubleSupplier<Module_T extends SwerveModule> {
+		public double get(Module_T module);
+	}
+	/** A static setter for a double property of a specific module type. */
+	public static interface ModuleDoubleConsumer<Module_T extends SwerveModule> {
+		public void set(Module_T module, double value);
+	}
+
 	/** ChassisStates represents the robot's 1st and 2nd order movement in the robot coordinate system (by default). */
 	public static class ChassisStates implements Sendable {
 		
@@ -183,7 +200,7 @@ public final class SwerveUtils {
 			return new SwerveModuleStates(angle_rad, 0.0, linear_vel, angular_vel, linear_acc);
 		}
 		public static SwerveModuleStates makeSecondOrder(Rotation2d angle, double linear_vel, double angular_vel, double linear_acc) {
-			return SwerveModuleStates.makeSecondOrder(angle.getRadians(), linear_vel, angular_vel, linear_vel);
+			return SwerveModuleStates.makeSecondOrder(angle.getRadians(), linear_vel, angular_vel, linear_acc);
 		}
 		public static SwerveModuleStates makeFrom(SwerveModuleState state) {
 			return new SwerveModuleStates(state.angle, 0.0, state.speedMetersPerSecond, 0.0, 0.0);

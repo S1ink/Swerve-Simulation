@@ -80,8 +80,8 @@ public class SwerveSimulator implements RecursiveSendable {
 		FramePositionY		(-5),
 		FrameVelocityX		(-4),
 		FrameVelocityY		(-3),
-		FrameRotation		(-2),
-		FrameAngularVel		(-1),
+		FramePositionA		(-2),	// 'angular'
+		FrameVelocityA		(-1),	// 'angular'
 
 		SteerAngle			(0),
 		SteerRate			(1),
@@ -142,10 +142,10 @@ public class SwerveSimulator implements RecursiveSendable {
 	private final DynamicsBuffer[] buffers = new DynamicsBuffer[4];		// 4 --> # of samples to dynamics within RK4 integration
 	private final int SIZE;
 	private final NX N_INPUTS, N_STATES;
-	private double STATIC_MASS;
-
 	private final Matrix<NX, N1> u_inputs;
 	private Matrix<NX, N1> x_states, y_outputs;
+	private DynamicsBuffer non_debug_buff;
+	private double STATIC_MASS;
 
 
 	public SwerveSimulator(SimConfig config, SwerveModule... modules) {
@@ -208,8 +208,8 @@ public class SwerveSimulator implements RecursiveSendable {
 	/** Run a single iteration of numerical integration on the simulation dynamics. */
 	public synchronized void integrate(double dt_seconds) {
 		for(int i = 0; i < this.SIZE; i++) {
-			this.u_inputs.set(i * 2 + 0, 0, this.modules[i].getMotorAVolts());
-			this.u_inputs.set(i * 2 + 1, 0, this.modules[i].getMotorBVolts());
+			this.u_inputs.set(i * 2 + 0, 0, Util.clamp(this.modules[i].getMotorAVolts(), -12, 12));
+			this.u_inputs.set(i * 2 + 1, 0, Util.clamp(this.modules[i].getMotorBVolts(), -12, 12));
 		}
 		// check that no ModuleSim's are null -- integration will be invalid if so
 		this.x_states = NumericalIntegration.rk4(
@@ -272,10 +272,10 @@ public class SwerveSimulator implements RecursiveSendable {
 
 		// STEP 0A: Allocate buffers for delta, reset summations
 		if(buffer == null) {
-			if(this.buffers[this.buffers.length - 1] == null) {
-				this.buffers[this.buffers.length - 1] = new DynamicsBuffer(this.SIZE);	// use the last buffer since the last call will be the last overwrite
+			if(this.non_debug_buff == null) {
+				this.non_debug_buff = new DynamicsBuffer(this.SIZE);	// use the last buffer since the last call will be the last overwrite
 			}
-			buffer = this.buffers[this.buffers.length - 1];
+			buffer = this.non_debug_buff;
 		}
 		final DynamicsBuffer db = buffer;
 		final Matrix<NX, N1>
@@ -289,8 +289,8 @@ public class SwerveSimulator implements RecursiveSendable {
 		db.rI_momentum = this.config.ROBOT_RI;
 
 		// STEP 0B: Extract system states
-		db.rx_frame = State.FrameRotation.from(x) % PI2;	// theta offset from the frame coordinate system
-		db.rv_frame = State.FrameAngularVel.from(x);		// the frame's rotation rate -- abstract coordinate space?
+		db.rx_frame = State.FramePositionA.from(x) % PI2;	// theta offset from the frame coordinate system
+		db.rv_frame = State.FrameVelocityA.from(x);			// the frame's rotation rate -- abstract coordinate space?
 		db.lv_field.set(									// the frame's velocity in the field coordinate system
 			State.FrameVelocityX.from(x),
 			State.FrameVelocityY.from(x) );
@@ -415,10 +415,10 @@ public class SwerveSimulator implements RecursiveSendable {
 		// STEP 6C: Set fields
 		State.FrameVelocityX.set(x_prime, db.la_field.x());		// delta velocity in field space
 		State.FrameVelocityY.set(x_prime, db.la_field.y());
-		State.FrameAngularVel.set(x_prime, db.ra_sys);			// delta rotation rate (abstract ref)
+		State.FrameVelocityA.set(x_prime, db.ra_sys);			// delta rotation rate (abstract ref)
 		State.FramePositionX.set(x_prime, db.lv_field.x());		// delta position in field space -- not modified from previous state
 		State.FramePositionY.set(x_prime, db.lv_field.y());
-		State.FrameRotation.set(x_prime, db.rv_frame);			// delta rotation (absolute ref)
+		State.FramePositionA.set(x_prime, db.rv_frame);			// delta rotation (absolute ref)
 
 		return x_prime;
 
@@ -428,12 +428,12 @@ public class SwerveSimulator implements RecursiveSendable {
 
 	@Override
 	public void initSendable(SendableBuilder b) {
-		b.addDoubleArrayProperty("State Data", this.y_outputs::getData, null);
+		b.addDoubleArrayProperty("State Data", ()->this.y_outputs.getData(), null);
 		b.addDoubleArrayProperty("Robot Pose",
 			()->new double[]{
 				State.FramePositionX.from(this.y_outputs),
 				State.FramePositionY.from(this.y_outputs),
-				State.FrameRotation.from(this.y_outputs)
+				State.FramePositionA.from(this.y_outputs)
 			}, null);
 		b.addDoubleArrayProperty("Wheel Poses",
 			()->Util.toComponents3d( this.visualization.getWheelPoses3d( this.getWheelRotations() ) ), null);
@@ -459,8 +459,8 @@ public class SwerveSimulator implements RecursiveSendable {
 			State.FramePositionY.from(vec),
 			State.FrameVelocityX.from(vec),
 			State.FrameVelocityY.from(vec),
-			State.FrameRotation.from(vec),
-			State.FrameAngularVel.from(vec)
+			State.FramePositionA.from(vec),
+			State.FrameVelocityA.from(vec)
 		);
 		for(int i = 0; i < this.SIZE; i++) {
 			s += String.format(
