@@ -49,7 +49,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 			// steer_motor_frict,	// this is a bit extra but physically accurate --> will need to compensate for the GT summation already applying the GT friction model to the motor's node...
 			// drive_motor_frict = steer_motor_frict = new StribeckFriction(0, 0, 0, 0),
 			steer_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.02),
-			drive_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.1),
+			drive_gt_frict = new StribeckFriction(0.1, 0.005, 0.002, 0.02),
 			steer_floor_frict = new StribeckFriction(0.1, 0.05, 0.02, 0),
 			wheel_side_frict = new StribeckFriction(0.1, 0.6, 0.5, 0);
 		private static final double
@@ -142,11 +142,11 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	public static class TestModule extends SwerveModule {
 
 		private static SimpleMotorFeedforward
-			steer_ff = new SimpleMotorFeedforward(0.015, 0.28, 0),
-			drive_ff = new SimpleMotorFeedforward(0, 2.4, 0);
+			steer_ff = new SimpleMotorFeedforward(0, 0, 0),
+			drive_ff = new SimpleMotorFeedforward(1.15, 0.53, 0);
 		private PIDController
-			steer_pid = new PIDController(0, 0, 0),
-			drive_pid = new PIDController(1, 0, 0);
+			steer_pid = new PIDController(10, 0, 0),
+			drive_pid = new PIDController(2, 0, 0);
 		private double
 			va, vb,
 			theta, target_theta,
@@ -159,6 +159,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 
 		public TestModule(Translation2d location) {
 			super(location);
+			this.steer_pid.enableContinuousInput(0, Math.PI * 2);
 		}
 
 		public synchronized void setVoltage(double steer_volts, double drive_volts) {
@@ -169,12 +170,12 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 		@Override
 		public void setState(double linear_vel, double steer_angle_rad, double linear_acc, double steer_angular_vel) {
 			// optimize setpoint
-			if(Math.abs(this.theta - steer_angle_rad) % (Math.PI * 2) > Math.PI / 2) {
+			if(Math.abs(steer_angle_rad - this.theta) % (Math.PI * 2) > Math.PI / 2) {
 				steer_angle_rad += Math.PI;
 				steer_angle_rad %= (Math.PI * 2);
 				linear_vel *= -1;
 			}
-			this.target_theta = steer_angle_rad + (this.theta - this.theta % (Math.PI * 2));
+			this.target_theta = steer_angle_rad;
 			this.target_omega = steer_angular_vel;
 			this.target_lv = linear_vel;
 			this.target_la = linear_acc;
@@ -216,7 +217,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 				// set PID dt somehow :(
 				final double
 					v_ff_steer = steer_ff.calculate(this.target_omega, (this.target_omega - this.omega) / dt),		// feedforward based on what speed we should be going
-					v_fb_steer = steer_pid.calculate(this.target_theta, this.theta),		// feedback based on how far off the set position we are -- velocity PID as well?
+					v_fb_steer = steer_pid.calculate(this.theta, this.target_theta),		// feedback based on how far off the set position we are -- velocity PID as well?
 					v_ff_drive = drive_ff.calculate(this.target_lv, this.target_la),		// feedforward based on what speed and acceleration we are targeting
 					v_fb_drive = drive_pid.calculate(this.lv_wheel, this.target_lv);		// feedback based on how far off the set velocity we are
 
@@ -440,7 +441,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 	public static class SwerveFFCharacterization<Module_T extends SwerveModule> {
 
 		public static final double
-			DEFAULT_VOLTAGE_RAMP = 0.5,
+			DEFAULT_VOLTAGE_RAMP = 8,
 			DEFAULT_MAX_VOLTS = 12.0,
 			DEFAULT_VELOCITY_CUTOFF = 1e-3;
 
@@ -547,7 +548,7 @@ public class TestSim extends CommandBase implements RecursiveSendable {
 				System.out.println("Characterization End!?");
 				this.timer.stop();
 				for(Module_T m : modules) {
-					this.voltage_setter.set(m, 0.0);
+					m.stop();
 				}
 			}
 

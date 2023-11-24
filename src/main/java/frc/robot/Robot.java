@@ -55,14 +55,14 @@ public class Robot extends TimedRobot {
 			enabled.and(Xbox.Digital.A.getPressedSupplier(xbox)).onTrue(
 				new SequentialCommandGroup(
 					new InstantCommand(()->t.cancel()),
-					steer_char.withTimeout(30),
+					steer_char.withTimeout(10),
 					new InstantCommand(()->t.schedule())
 				)
 			);
 			enabled.and(Xbox.Digital.B.getPressedSupplier(xbox)).onTrue(
 				new SequentialCommandGroup(
 					new InstantCommand(()->t.cancel()),
-					drive_char.withTimeout(30),
+					drive_char.withTimeout(10),
 					new InstantCommand(()->t.schedule())
 				)
 			);

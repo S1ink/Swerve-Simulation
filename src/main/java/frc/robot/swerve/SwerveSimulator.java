@@ -619,7 +619,7 @@ public class SwerveSimulator implements RecursiveSendable {
 
 		@Override
 		public boolean hasNext() {
-			return this.ptr + 1 < arr.length;
+			return this.ptr < arr.length;
 		}
 		@Override
 		public T next() {
