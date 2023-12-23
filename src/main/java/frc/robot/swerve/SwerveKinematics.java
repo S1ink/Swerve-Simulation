@@ -1,11 +1,11 @@
 package frc.robot.swerve;
 
 import java.util.Arrays;
+import java.util.Collections;
 
 import org.ejml.simple.SimpleMatrix;
 
 import edu.wpi.first.math.geometry.*;
-
 import frc.robot.swerve.SwerveUtils.*;
 
 
@@ -113,6 +113,21 @@ public final class SwerveKinematics {
 
 	}
 
+	public SwerveModuleStates[] lockFormation(Translation2d relative_center, SwerveModuleStates[] output) {
+		if(output == null || output.length < this.SIZE) {
+			output = new SwerveModuleStates[this.SIZE];
+		}
+		for(int i = 0; i < this.SIZE; i++) {
+			if(output[i] == null) output[i] = new SwerveModuleStates();
+			else output[i].zero();
+			output[i].rotation = (this.module_locations[i].minus(relative_center).getAngle().getRadians());
+		}
+		return output;
+	}
+	public SwerveModuleStates[] lockFormation(SwerveModuleStates[] output) {
+		return this.lockFormation(no_recenter, output);
+	}
+
 
 	/** The output linear velocities and accelerations are in the robot's coordinate space. */
 	public ChassisStates toChassisStates(SwerveModuleStates... states) {
@@ -188,6 +203,19 @@ public final class SwerveKinematics {
 			mat.setRow(i * 2 + 1, 0, 0, 1, -y, +x);
 		}
 		return mat;
+	}
+
+
+	public static void normalizeModuleVelocities(double max_velocity, SwerveModuleStates... states) {
+		final double max = Collections.max(
+			Arrays.asList(states),
+			(SwerveModuleStates a, SwerveModuleStates b)->Double.compare(a.linear_velocity, b.linear_velocity)
+		).linear_velocity;
+		if(max > max_velocity) {
+			for(final SwerveModuleStates s : states) {
+				s.angular_velocity *= (max_velocity / max);
+			}
+		}
 	}
 
 

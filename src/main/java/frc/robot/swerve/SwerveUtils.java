@@ -2,8 +2,6 @@ package frc.robot.swerve;
 
 import java.util.function.Function;
 
-import org.ejml.simple.SimpleMatrix;
-
 import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
 import edu.wpi.first.util.sendable.Sendable;
@@ -44,6 +42,9 @@ public final class SwerveUtils {
 		public ChassisStates() {}
 		public ChassisStates(double x_v, double y_v, double r_v) {
 			this(x_v, y_v, r_v, 0.0, 0.0, 0.0);
+		}
+		public ChassisStates(ChassisSpeeds speeds) {
+			this(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond, speeds.omegaRadiansPerSecond);
 		}
 		public ChassisStates(double x_v, double y_v, double r_v, double x_a, double y_a, double r_a) {
 			this.x_velocity = x_v;
@@ -210,6 +211,14 @@ public final class SwerveUtils {
 		}
 		public static SwerveModuleStates makeFrom(SwerveModuleStates states) {
 			return new SwerveModuleStates(states);
+		}
+
+		public void zero() {
+			this.rotation =
+			this.linear_displacement =
+			this.linear_velocity =
+			this.angular_velocity =
+			this.linear_acceleration = 0.0;
 		}
 
 		public Rotation2d getRotation2d() {
