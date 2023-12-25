@@ -104,12 +104,30 @@ public final class SwerveUtils {
 		public Twist2d integrate(double dt) {
 			return this.integrate(dt, null);
 		}
+		/** Create a twist of the chassis' path taken during the provided time interval */
 		public Twist2d integrate(double dt, Twist2d buff) {
 			if(buff == null) { buff = new Twist2d(); }
 			buff.dx = this.x_velocity * dt;
 			buff.dy = this.y_velocity * dt;
 			buff.dtheta = this.angular_velocity * dt;
 			return buff;
+		}
+		/** See the static method descretizeCurvature() */
+		public void descretizeVelocities(double dt) {
+			ChassisStates.descretizeCurvature(this, dt);
+		}
+
+		/** Treat the integrated pose from the chassis' velocities as a target and work backwards to find the correct "constant curvature" velocities which should be used */
+		public static void descretizeCurvature(ChassisStates states, double dt) {
+			final Pose2d delta = new Pose2d(
+				states.x_velocity * dt,
+				states.y_velocity * dt,
+				Rotation2d.fromRadians(states.angular_velocity * dt)
+			);
+			final Twist2d curvature = new Pose2d().log(delta);
+			states.x_velocity = curvature.dx / dt;
+			states.y_velocity = curvature.dy / dt;
+			states.angular_velocity = curvature.dtheta / dt;
 		}
 
 		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */

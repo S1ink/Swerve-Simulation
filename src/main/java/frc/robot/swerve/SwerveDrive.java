@@ -4,7 +4,6 @@ import edu.wpi.first.util.sendable.*;
 import edu.wpi.first.wpilibj.interfaces.Gyro;
 import edu.wpi.first.wpilibj2.command.Subsystem;
 import edu.wpi.first.math.geometry.*;
-import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.swerve.SwerveUtils.*;
 import frc.robot.team3407.Util;
@@ -22,7 +21,7 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 	protected final SwerveVisualization visualization;
 
 	protected final SwerveModuleStates[] lock_states;
-	protected SwerveModuleStates[] states, targets;
+	protected SwerveModuleStates[] states, targets, prev_states;
 
 	public final int SIZE;
 
@@ -33,6 +32,7 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 		this.SIZE = modules.length;
 		this.states = new SwerveModuleStates[this.SIZE];
 		this.targets = new SwerveModuleStates[this.SIZE];
+		this.prev_states = new SwerveModuleStates[this.SIZE];
 
 		final Translation2d[] locations = new Translation2d[this.SIZE];
 		for(int i = 0; i < this.SIZE; i++) {
@@ -60,13 +60,18 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 		// 	this.gyro.getRotation2d(),
 		// 	this.positions
 		// );
+		for(final Module_T m : this.modules) {
+			m.periodic(0.02);
+		}
 	}
 
 	@Override
 	public void initSendable(SendableBuilder b) {
 		// b.addDoubleArrayProperty("Odometry", ()->Util.toComponents2d(this.odometry.getPoseMeters()), null);
-		b.addDoubleArrayProperty("Module Poses 3d", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.states)), null);
-		b.addDoubleArrayProperty("Wheel Vectors 2d", ()->SwerveVisualization.getVecComponents2d(this.states), null);
+		b.addDoubleArrayProperty("[S] Module Poses 3d", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.states)), null);
+		b.addDoubleArrayProperty("[S] Wheel Vectors 2d", ()->SwerveVisualization.getVecComponents2d(this.states), null);
+		b.addDoubleArrayProperty("[T] Module Poses 3d", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.targets)), null);
+		b.addDoubleArrayProperty("[T] Wheel Vectors 2d", ()->SwerveVisualization.getVecComponents2d(this.targets), null);
 	}
 
 
@@ -108,3 +113,18 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 
 
 }
+
+/**
+ * Swerve control pipeline steps:
+ * 1. raw ix iy ir
+ * 2. apply deadband
+ * 3. apply power scaling
+ * 4. convert to measured velocity
+ * 5. pre-normalize by estimated max velocity (?)
+ * 5. slew rate limit -- (which target do we compare?)
+ * 7. convert to constant curvature
+ * 8. convert to module targets
+ * 9. post-normalize by wheel velocity (? -- mutually exclusive with first pass)
+ * 10. optimize rotations
+ * 11. apply to modules
+ */
