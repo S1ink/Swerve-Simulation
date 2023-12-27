@@ -2,6 +2,7 @@ package frc.robot.swerve;
 
 import java.util.function.Function;
 
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
 import edu.wpi.first.util.sendable.Sendable;
@@ -128,6 +129,35 @@ public final class SwerveUtils {
 			states.x_velocity = curvature.dx / dt;
 			states.y_velocity = curvature.dy / dt;
 			states.angular_velocity = curvature.dtheta / dt;
+		}
+
+		/** Normalize target chassis speeds based on the maximum possible wheel speed and maximum allowable wheel speed */
+		public static void normalizeByMaximumV(ChassisStates target, double max_module_radius, double max_module_velocity) {
+			final double maxv = Math.hypot(target.x_velocity, target.y_velocity) + (max_module_radius * target.angular_velocity);
+			if(maxv > max_module_velocity) {
+				final double scale = max_module_velocity / maxv;
+				target.x_velocity *= scale;
+				target.y_velocity *= scale;
+				target.angular_velocity *= scale;
+			}
+		}
+		/** Clamp the linear and rotational velocities based on their relative accelerations since the last target (velocity rate limit = acceleration limit) */
+		public static void rateLimitVelocities(ChassisStates target, ChassisStates last, double dt,
+			double linear_acc_limit, double rotational_acc_limit)
+		{
+			final double
+				dvx = target.x_velocity - last.x_velocity,
+				dvy = target.y_velocity - last.y_velocity,
+				dvr = target.angular_velocity - last.angular_velocity,
+				dv = Math.hypot(dvx, dvy),
+				_dv = MathUtil.clamp(dv / dt, -linear_acc_limit, linear_acc_limit) * dt,
+				_dr = MathUtil.clamp(dvr / dt, -rotational_acc_limit, rotational_acc_limit) * dt,
+				scale = dv == 0.0 ? 1.0 : _dv / dv,	// protected against div by 0 when target is (0, 0)
+				_dvx = dvx * scale,
+				_dvy = dvy * scale;
+			target.x_velocity = last.x_velocity + _dvx;
+			target.y_velocity = last.y_velocity + _dvy;
+			target.angular_velocity = last.angular_velocity + _dr;
 		}
 
 		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
