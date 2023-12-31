@@ -146,13 +146,15 @@ public final class SwerveUtils {
 			double linear_acc_limit, double rotational_acc_limit)
 		{
 			final double
+				dvlim = linear_acc_limit * dt,
+				drlim = rotational_acc_limit * dt,
 				dvx = target.x_velocity - last.x_velocity,
 				dvy = target.y_velocity - last.y_velocity,
 				dvr = target.angular_velocity - last.angular_velocity,
 				dv = Math.hypot(dvx, dvy),
-				_dv = MathUtil.clamp(dv / dt, -linear_acc_limit, linear_acc_limit) * dt,
-				_dr = MathUtil.clamp(dvr / dt, -rotational_acc_limit, rotational_acc_limit) * dt,
-				scale = dv == 0.0 ? 1.0 : _dv / dv,	// protected against div by 0 when target is (0, 0)
+				_dv = MathUtil.clamp(dv, -dvlim, dvlim),
+				_dr = MathUtil.clamp(dvr, -drlim, drlim),
+				scale = dv == 0.0 ? 1.0 : _dv / dv,		// protected against div by 0 when target vel is (0, 0)
 				_dvx = dvx * scale,
 				_dvy = dvy * scale;
 			target.x_velocity = last.x_velocity + _dvx;
