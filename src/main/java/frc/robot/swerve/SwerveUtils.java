@@ -29,6 +29,10 @@ public final class SwerveUtils {
 		public void set(Module_T module, double value);
 	}
 
+
+
+
+
 	/** ChassisStates represents the robot's 1st and 2nd order movement in the robot coordinate system (by default). */
 	public static class ChassisStates implements Sendable {
 		
@@ -65,6 +69,7 @@ public final class SwerveUtils {
 		}
 
 
+		/** Set all properties to zero. */
 		public void zero() {
 			this.x_velocity
 				= this.y_velocity
@@ -74,6 +79,7 @@ public final class SwerveUtils {
 				= this.angular_acceleration
 				= 0;
 		}
+		/** Compare all value to see if they are zero. */
 		public boolean isStopped() {
 			return (
 				this.x_velocity == 0 &&
@@ -85,6 +91,7 @@ public final class SwerveUtils {
 			);
 		}
 
+		/** Shift all directional properties by the provided rotation. */
 		public ChassisStates rotate(double radians) {
 			final double
 				sin = Math.sin(radians),
@@ -95,17 +102,20 @@ public final class SwerveUtils {
 			this.y_acceleration = this.x_acceleration * sin + this.y_acceleration * cos;
 			return this;
 		}
+		/** Convert this instance to be in the field frame of reference. */
 		public ChassisStates toFieldRelative(double robot_heading_rad) {
 			return this.rotate(robot_heading_rad);
 		}
+		/** Convert this instance to be in the robot frame of reference. */
 		public ChassisStates fromFieldRelative(double robot_heading_rad) {
 			return this.rotate(-robot_heading_rad);
 		}
 
+		/** Create a twist describing the robot's path during a time interval (not including accelerations). */
 		public Twist2d integrate(double dt) {
 			return this.integrate(dt, null);
 		}
-		/** Create a twist of the chassis' path taken during the provided time interval */
+		/** Create a twist of the chassis' path taken during the provided time interval (not including accelerations). */
 		public Twist2d integrate(double dt, Twist2d buff) {
 			if(buff == null) { buff = new Twist2d(); }
 			buff.dx = this.x_velocity * dt;
@@ -113,7 +123,19 @@ public final class SwerveUtils {
 			buff.dtheta = this.angular_velocity * dt;
 			return buff;
 		}
-		/** See the static method descretizeCurvature() */
+		/** Create a twist describing the robot's path during a time interval including accelerations. */
+		public Twist2d integrate2(double dt) {
+			return this.integrate2(dt, null);
+		}
+		/** Create twist of the robot's path taken during the provided time interval including accelerations. */
+		public Twist2d integrate2(double dt, Twist2d buff) {
+			if(buff == null) { buff = new Twist2d(); }
+			buff.dx = this.x_velocity * dt + 0.5 * this.x_acceleration * dt * dt;
+			buff.dy = this.y_velocity * dt + 0.5 * this.y_acceleration * dt * dt;
+			buff.dtheta = this.angular_velocity * dt + 0.5 * this.angular_acceleration * dt * dt;
+			return buff;
+		}
+		/** Calls the static method descretizeCurvature() on this instance. */
 		public void descretizeVelocities(double dt) {
 			ChassisStates.descretizeCurvature(this, dt);
 		}
@@ -211,8 +233,7 @@ public final class SwerveUtils {
 
 
 
-	/** SwerveModuleStates has a bunch of information about the module's states
-	 * (not geographical states) -- can be in robot or field coordinate system depending on the context. */
+	/** SwerveModuleStates contains all possible target or sensor-provided states for a swerve module. */
 	public static class SwerveModuleStates implements Sendable {
 
 		public double
@@ -263,6 +284,7 @@ public final class SwerveUtils {
 			return new SwerveModuleStates(states);
 		}
 
+		/** Set all properties to zero. */
 		public void zero() {
 			this.rotation =
 			this.linear_displacement =
@@ -271,20 +293,24 @@ public final class SwerveUtils {
 			this.linear_acceleration = 0.0;
 		}
 
+		/** Get the rotation as a Rotation2d */
 		public Rotation2d getRotation2d() {
 			return Rotation2d.fromRadians(this.rotation);
 		}
-
+		/** Get the equivalent SwerveModulePosition representation (WPI) */
 		public SwerveModulePosition toPosition() {
 			return new SwerveModulePosition(this.linear_displacement, this.getRotation2d());
 		}
+		/** Get the equivalent SwerveModuleState representation (WPI) */
 		public SwerveModuleState toVelocityState() {
 			return new SwerveModuleState(this.linear_velocity, this.getRotation2d());
 		}
 
+		/** Create a copy of this instance. */
 		public SwerveModuleStates copy() {								// copy OUT
 			return SwerveModuleStates.makeFrom(this);
 		}
+		/** Copy all properties to the provided instance. Returns this instance. */
 		public SwerveModuleStates copy(SwerveModuleStates states) {		// copy IN
 			this.rotation = states.rotation;
 			this.linear_displacement = states.linear_displacement;
@@ -337,14 +363,6 @@ public final class SwerveUtils {
 
 
 	}
-
-
-
-	// public static interface SwerveModuleController {
-
-	// 	public double 
-
-	// }
 
 
 

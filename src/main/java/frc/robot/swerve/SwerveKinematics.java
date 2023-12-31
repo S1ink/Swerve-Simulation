@@ -9,6 +9,7 @@ import edu.wpi.first.math.geometry.*;
 import frc.robot.swerve.SwerveUtils.*;
 
 
+/** SwerveKinematics provides conversions between the robot state and each module's state. */
 public final class SwerveKinematics {
 
 	protected final Translation2d[]
@@ -23,6 +24,8 @@ public final class SwerveKinematics {
 		stored_recenter = no_recenter;
 
 
+	/** Create a SwerveKinematics instance for a set of modules in the provided robot-relative positions.
+	 * All method calls assume the same module ordering as are provided here. */
 	public SwerveKinematics(Translation2d... locations) {
 
 		this.SIZE = locations.length;
@@ -47,10 +50,12 @@ public final class SwerveKinematics {
 	}
 
 
+	/** Get the module states required for a chassis state. */
 	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, SwerveModuleStates[] output) {
 		return this.toModuleStates(robot_state, output, no_recenter);
 	}
 
+	/** Get the module states required for a chassis state with a modifiable axis of rotation. */
 	public SwerveModuleStates[] toModuleStates(ChassisStates robot_state, SwerveModuleStates[] output, Translation2d recenter) {
 
 		if(!this.stored_recenter.equals(recenter)) {
@@ -113,6 +118,7 @@ public final class SwerveKinematics {
 
 	}
 
+	/** Get the module states for a locking (aka 'X') formation - used when trying to stay in the same position. */
 	public SwerveModuleStates[] lockFormation(Translation2d relative_center, SwerveModuleStates[] output) {
 		if(output == null || output.length < this.SIZE) {
 			output = new SwerveModuleStates[this.SIZE];
@@ -124,12 +130,13 @@ public final class SwerveKinematics {
 		}
 		return output;
 	}
+	/** Get the module states for a locking (aka 'X') formation - used when trying to stay in the same position. */
 	public SwerveModuleStates[] lockFormation(SwerveModuleStates[] output) {
 		return this.lockFormation(no_recenter, output);
 	}
 
 
-	/** The output linear velocities and accelerations are in the robot's coordinate space. */
+	/** Get the resulting chassis state from a set of module states. */
 	public ChassisStates toChassisStates(SwerveModuleStates... states) {
 
 		if(states.length < this.SIZE) {
@@ -173,6 +180,21 @@ public final class SwerveKinematics {
 
 
 
+	/** Normalize a set of module states based on a maximum wheel velocity. */
+	public static void normalizeModuleVelocities(double max_velocity, SwerveModuleStates... states) {
+		final double max = Collections.max(
+			Arrays.asList(states),
+			(SwerveModuleStates a, SwerveModuleStates b)->Double.compare(a.linear_velocity, b.linear_velocity)
+		).linear_velocity;
+		if(max > max_velocity) {
+			for(final SwerveModuleStates s : states) {
+				s.angular_velocity *= (max_velocity / max);
+			}
+		}
+	}
+
+
+
 
 
 	public static SimpleMatrix invKinematicsMat_D1(Translation2d... modules) {
@@ -203,19 +225,6 @@ public final class SwerveKinematics {
 			mat.setRow(i * 2 + 1, 0, 0, 1, -y, +x);
 		}
 		return mat;
-	}
-
-
-	public static void normalizeModuleVelocities(double max_velocity, SwerveModuleStates... states) {
-		final double max = Collections.max(
-			Arrays.asList(states),
-			(SwerveModuleStates a, SwerveModuleStates b)->Double.compare(a.linear_velocity, b.linear_velocity)
-		).linear_velocity;
-		if(max > max_velocity) {
-			for(final SwerveModuleStates s : states) {
-				s.angular_velocity *= (max_velocity / max);
-			}
-		}
 	}
 
 
