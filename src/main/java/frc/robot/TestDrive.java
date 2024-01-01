@@ -105,6 +105,7 @@ public class TestDrive extends CommandBase implements Gyro {
 		this.sdrive = new SwerveDrive<>(this, modules);
 		this.sdrive.register();
 		this.sdrive.smartDashboardInit("Test SwerveDrive");
+		this.sdrive.applyParams(new SwerveDrive.AugmentationParams(true, VELOCITY_SCALE));
 	}
 
 

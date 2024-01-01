@@ -1,6 +1,6 @@
 package frc.robot.swerve.simutil;
 
-import frc.robot.team3407.Util;
+import frc.robot.swerve.SwerveUtils;
 
 
 /** FrictionModel represents any model of the friction between 2 surfaces. */
@@ -71,7 +71,7 @@ public interface FrictionModel {
 				fc = coulomb_coeff * f_norm,
 				fs = stiction_coeff * f_norm,
 				fv = viscous_coeff * f_norm * -vel,
-				s = Util.sgnnz(vel),
+				s = SwerveUtils.sgnnz(vel),
 				c = 1.0 / (1.0 + Math.pow(vel / stb_vel, 2));
 			return (fc + (fs - fc) * c) * -s + fv;
 		}

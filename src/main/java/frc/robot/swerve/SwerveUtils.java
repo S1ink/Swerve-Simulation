@@ -5,12 +5,19 @@ import java.util.function.Function;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.math.kinematics.*;
-import edu.wpi.first.util.sendable.Sendable;
-import edu.wpi.first.util.sendable.SendableBuilder;
+import edu.wpi.first.util.sendable.*;
 
 
-/** SwerveUtils holds many utility classes used for swerve control/simulation */
+/** SwerveUtils holds utility classes and static methods used for swerve control/simulation.
+ * Contents:
+ * Module property suppliers,
+ * {@link ChassisStates} class,
+ * {@link SwerveModuleStates} class,
+ * {@link SwerveVisualization} class,
+ * General utils */
 public final class SwerveUtils {
+
+// MODULE PROPERTY SUPPLIERS
 
 	/** A static getter for a property of a specific module type. */
 	public static interface ModulePropertySupplier<Module_T extends SwerveModule, T> {
@@ -32,6 +39,8 @@ public final class SwerveUtils {
 
 
 
+
+// CHASSIS STATES
 
 	/** ChassisStates represents the robot's 1st and 2nd order movement in the robot coordinate system (by default). */
 	public static class ChassisStates implements Sendable {
@@ -69,6 +78,8 @@ public final class SwerveUtils {
 		}
 
 
+
+
 		/** Set all properties to zero. */
 		public void zero() {
 			this.x_velocity
@@ -91,6 +102,7 @@ public final class SwerveUtils {
 			);
 		}
 
+
 		/** Shift all directional properties by the provided rotation. */
 		public ChassisStates rotate(double radians) {
 			final double
@@ -111,6 +123,8 @@ public final class SwerveUtils {
 			return this.rotate(-robot_heading_rad);
 		}
 
+
+
 		/** Create a twist describing the robot's path during a time interval (not including accelerations). */
 		public Twist2d integrate(double dt) {
 			return this.integrate(dt, null);
@@ -123,6 +137,7 @@ public final class SwerveUtils {
 			buff.dtheta = this.angular_velocity * dt;
 			return buff;
 		}
+
 		/** Create a twist describing the robot's path during a time interval including accelerations. */
 		public Twist2d integrate2(double dt) {
 			return this.integrate2(dt, null);
@@ -135,10 +150,14 @@ public final class SwerveUtils {
 			buff.dtheta = this.angular_velocity * dt + 0.5 * this.angular_acceleration * dt * dt;
 			return buff;
 		}
+
+
 		/** Calls the static method descretizeCurvature() on this instance. */
 		public void descretizeVelocities(double dt) {
 			ChassisStates.descretizeCurvature(this, dt);
 		}
+
+
 
 		/** Treat the integrated pose from the chassis' velocities as a target and work backwards to find the correct "constant curvature" velocities which should be used */
 		public static void descretizeCurvature(ChassisStates states, double dt) {
@@ -163,6 +182,7 @@ public final class SwerveUtils {
 				target.angular_velocity *= scale;
 			}
 		}
+
 		/** Clamp the linear and rotational velocities based on their relative accelerations since the last target (velocity rate limit = acceleration limit) */
 		public static void rateLimitVelocities(ChassisStates target, ChassisStates last, double dt,
 			double linear_acc_limit, double rotational_acc_limit)
@@ -186,25 +206,17 @@ public final class SwerveUtils {
 
 		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
 		public static ChassisStates fromFieldRelative(
-			double x_v, double y_v, double r_v, double x_a, double y_a, double r_a,
-			double robot_heading_rad
-		) {
-			return new ChassisStates( x_v, x_v, r_v, x_a, x_a, r_a ).fromFieldRelative(robot_heading_rad);
-		}
+			double x_v, double y_v, double r_v, double x_a, double y_a, double r_a, double robot_heading_rad )
+				{ return new ChassisStates( x_v, x_v, r_v, x_a, x_a, r_a ).fromFieldRelative(robot_heading_rad); }
 		/** Convert from a movement in the field coordinate system to one in the Robot's coordinate system given the robot's heading. */
-		public static ChassisStates fromFieldRelative(ChassisStates states, double robot_heading_rad) {
-			return new ChassisStates( states ).fromFieldRelative(robot_heading_rad);
-		}
+		public static ChassisStates fromFieldRelative(ChassisStates states, double robot_heading_rad)
+				{ return new ChassisStates( states ).fromFieldRelative(robot_heading_rad); }
 
-		public static ChassisStates rotate(ChassisStates states, double radians) {
-			return new ChassisStates( states ).rotate(radians);
-		}
+		public static ChassisStates rotate(ChassisStates states, double radians)
+				{ return new ChassisStates( states ).rotate(radians); }
 		public static ChassisStates rotate(
-			double x_v, double y_v, double r_v, double x_a, double y_a, double r_a,
-			double radians
-		) {
-			return new ChassisStates( x_v, x_v, r_v, x_a, x_a, r_a ).rotate(radians);
-		}
+			double x_v, double y_v, double r_v, double x_a, double y_a, double r_a, double radians )
+				{ return new ChassisStates( x_v, x_v, r_v, x_a, x_a, r_a ).rotate(radians); }
 
 		/** Populate the ChassisStates' second order properties using deltas between 2 of the 1st order properties and a delta time. */
 		public static ChassisStates accFromDelta(ChassisStates from, ChassisStates to, double dt, ChassisStates buff) {
@@ -233,6 +245,10 @@ public final class SwerveUtils {
 
 
 
+
+
+// MODULE STATES
+
 	/** SwerveModuleStates contains all possible target or sensor-provided states for a swerve module. */
 	public static class SwerveModuleStates implements Sendable {
 
@@ -256,33 +272,31 @@ public final class SwerveUtils {
 			this.linear_acceleration = linear_acc;
 		}
 
-		public static SwerveModuleStates makePosition(double angle_rad, double linear_pos) {
-			return new SwerveModuleStates(angle_rad, linear_pos, 0.0, 0.0, 0.0);
-		}
-		public static SwerveModuleStates makePosition(Rotation2d angle, double linear_pos) {
-			return SwerveModuleStates.makePosition(angle.getRadians(), linear_pos);
-		}
-		public static SwerveModuleStates makeVelocity(double angle_rad, double linear_vel) {
-			return new SwerveModuleStates(angle_rad, 0.0, linear_vel, 0.0, 0.0);
-		}
-		public static SwerveModuleStates makeVelocity(Rotation2d angle, double linear_vel) {
-			return SwerveModuleStates.makeVelocity(angle.getRadians(), linear_vel);
-		}
-		public static SwerveModuleStates makeSecondOrder(double angle_rad, double linear_vel, double angular_vel, double linear_acc) {
-			return new SwerveModuleStates(angle_rad, 0.0, linear_vel, angular_vel, linear_acc);
-		}
-		public static SwerveModuleStates makeSecondOrder(Rotation2d angle, double linear_vel, double angular_vel, double linear_acc) {
-			return SwerveModuleStates.makeSecondOrder(angle.getRadians(), linear_vel, angular_vel, linear_acc);
-		}
-		public static SwerveModuleStates makeFrom(SwerveModuleState state) {
-			return new SwerveModuleStates(state.angle, 0.0, state.speedMetersPerSecond, 0.0, 0.0);
-		}
-		public static SwerveModuleStates makeFrom(SwerveModulePosition position) {
-			return new SwerveModuleStates(position.angle, position.distanceMeters, 0.0, 0.0, 0.0);
-		}
-		public static SwerveModuleStates makeFrom(SwerveModuleStates states) {
-			return new SwerveModuleStates(states);
-		}
+
+		public static SwerveModuleStates makePosition(double angle_rad, double linear_pos)
+			{ return new SwerveModuleStates(angle_rad, linear_pos, 0.0, 0.0, 0.0); }
+		public static SwerveModuleStates makePosition(Rotation2d angle, double linear_pos)
+			{ return SwerveModuleStates.makePosition(angle.getRadians(), linear_pos); }
+
+		public static SwerveModuleStates makeVelocity(double angle_rad, double linear_vel)
+			{ return new SwerveModuleStates(angle_rad, 0.0, linear_vel, 0.0, 0.0); }
+		public static SwerveModuleStates makeVelocity(Rotation2d angle, double linear_vel)
+			{ return SwerveModuleStates.makeVelocity(angle.getRadians(), linear_vel); }
+
+		public static SwerveModuleStates makeSecondOrder(double angle_rad, double linear_vel, double angular_vel, double linear_acc)
+			{ return new SwerveModuleStates(angle_rad, 0.0, linear_vel, angular_vel, linear_acc); }
+		public static SwerveModuleStates makeSecondOrder(Rotation2d angle, double linear_vel, double angular_vel, double linear_acc)
+			{ return SwerveModuleStates.makeSecondOrder(angle.getRadians(), linear_vel, angular_vel, linear_acc); }
+
+		public static SwerveModuleStates makeFrom(SwerveModuleState state)
+			{ return new SwerveModuleStates(state.angle, 0.0, state.speedMetersPerSecond, 0.0, 0.0); }
+		public static SwerveModuleStates makeFrom(SwerveModulePosition position)
+			{ return new SwerveModuleStates(position.angle, position.distanceMeters, 0.0, 0.0, 0.0); }
+		public static SwerveModuleStates makeFrom(SwerveModuleStates states)
+			{ return new SwerveModuleStates(states); }
+
+
+
 
 		/** Set all properties to zero. */
 		public void zero() {
@@ -310,7 +324,7 @@ public final class SwerveUtils {
 		public SwerveModuleStates copy() {								// copy OUT
 			return SwerveModuleStates.makeFrom(this);
 		}
-		/** Copy all properties to the provided instance. Returns this instance. */
+		/** Copy all properties from the provided instance. Returns this instance. */
 		public SwerveModuleStates copy(SwerveModuleStates states) {		// copy IN
 			this.rotation = states.rotation;
 			this.linear_displacement = states.linear_displacement;
@@ -321,10 +335,10 @@ public final class SwerveUtils {
 		}
 
 
-		/** Optimizes the target state in case the module is attempting to turn more than 90 degrees - in this case we can just flip the direction and turn to a less extreme angle. */
-		public static SwerveModuleStates optimize(
-			SwerveModuleStates target_states, double current_rotation, SwerveModuleStates result)
-		{
+
+		/** Optimizes the target state in case the module is attempting to turn more
+		 * than 90 degrees - in this case we can just flip the direction and turn to a less extreme angle. */
+		public static SwerveModuleStates optimize(SwerveModuleStates target_states, double current_rotation, SwerveModuleStates result) {
 			if(result == null) { result = target_states.copy(); }
 			else if(result != target_states) { result.copy(target_states); }
 			if(Math.abs(target_states.rotation - current_rotation) > Math.PI / 2) {
@@ -337,14 +351,10 @@ public final class SwerveUtils {
 			return SwerveModuleStates.optimize(target_states, current_rotation, null);
 		}
 
-		public static SwerveModuleStates optimize(
-			SwerveModuleStates target_states, SwerveModuleStates current_states, SwerveModuleStates result)
-		{
-			return SwerveModuleStates.optimize(target_states, current_states.rotation, result);	// temporary. evenually compare momentum as well
+		public static SwerveModuleStates optimize(SwerveModuleStates target_states, SwerveModuleStates current_states, SwerveModuleStates result) {
+			return SwerveModuleStates.optimize(target_states, current_states.rotation, result);
 		}
-		public static SwerveModuleStates optimize(
-			SwerveModuleStates target_states, SwerveModuleStates current_states)
-		{
+		public static SwerveModuleStates optimize(SwerveModuleStates target_states, SwerveModuleStates current_states) {
 			return SwerveModuleStates.optimize(target_states, current_states, null);
 		}
 
@@ -369,6 +379,8 @@ public final class SwerveUtils {
 
 
 
+
+// VISUALIZATION
 
 	/** Allows for easy data conversion/management for viewing a swerve model in 3D using AdvantageScope. */
 	public static class SwerveVisualization {
@@ -444,6 +456,7 @@ public final class SwerveUtils {
 			}
 			return data;
 		}
+		/* For the 'Swerve' AdvantageScope tab -- 2d vector representation */
 		public static double[] getVecComponents2d(SwerveModuleStates... states) {
 			final double[] data = new double[states.length * 2];
 			for(int i = 0; i < states.length; i++) {
@@ -477,6 +490,61 @@ public final class SwerveUtils {
 			new Translation2d(-w, +l),
 			new Translation2d(+w, +l)
 		};
+	}
+
+
+
+
+
+// GENERAL UTILS (copied from submodule)
+
+	/** Test if a value is within a certain epsilon away from zero. */
+	public static boolean isZero(double v, double epsilon) {
+		return (v < epsilon && v > -epsilon);
+	}
+	/** Return 0.0 if a value is within a certain epsilon away from zero, else return the value. */
+	public static double zeroRange(double v, double epsilon) {
+		return isZero(v, epsilon) ? 0.0 : v;
+	}
+	/** Clamp a value between two bounds. */
+	public static double clamp(double v, double min, double max) {
+		return Math.min(max, Math.max(min, v));
+	}
+	/** Clamp a value between the positive and negatives of a range. */
+	public static double clampEq(double v, double range) {
+		return clamp(v, -Math.abs(range), Math.abs(range));
+	}
+	/** Return the sign of a number, returning 1.0 if the number is equal to 0. */
+	public static double sgnnz(double v) {	// 'sgn', No Zero
+		return v >= 0.0 ? 1.0 : -1.0;
+	}
+
+	/** Convert a set of 2d poses to an array of telemetry values. */
+	public static double[] toComponents2d(Pose2d... poses) {
+		final double[] values = new double[poses.length * 3];
+		for(int i = 0; i < poses.length; i++) {
+			int offset = i * 3;
+			values[offset + 0] = poses[i].getX();
+			values[offset + 1] = poses[i].getY();
+			values[offset + 2] = poses[i].getRotation().getRadians();
+		}
+		return values;
+	}
+	/** Convert a set of 3d poses to an array of telemetry values. */
+	public static double[] toComponents3d(Pose3d... poses) {
+		final double[] values = new double[poses.length * 7];
+		for(int i = 0; i < poses.length; i++) {
+			int offset = i * 7;
+			Quaternion q = poses[i].getRotation().getQuaternion();
+			values[offset + 0] = poses[i].getX();
+			values[offset + 1] = poses[i].getY();
+			values[offset + 2] = poses[i].getZ();
+			values[offset + 3] = q.getW();
+			values[offset + 4] = q.getX();
+			values[offset + 5] = q.getY();
+			values[offset + 6] = q.getZ();
+		}
+		return values;
 	}
 
 

@@ -11,8 +11,8 @@ import edu.wpi.first.util.sendable.*;
 
 import frc.robot.swerve.SwerveUtils.*;
 import frc.robot.swerve.simutil.*;
-import frc.robot.team3407.*;
-import frc.robot.team3407.SenderNT.RecursiveSendable;
+import frc.robot.team3407.SenderNT;
+import frc.robot.team3407.SenderNT.*;
 
 
 /** SwerveSimulator applies the "high-level" physics computation and integration required to simulate a
@@ -208,8 +208,8 @@ public class SwerveSimulator implements RecursiveSendable {
 	/** Run a single iteration of numerical integration on the simulation dynamics. */
 	public synchronized void integrate(double dt_seconds) {
 		for(int i = 0; i < this.SIZE; i++) {
-			this.u_inputs.set(i * 2 + 0, 0, Util.clamp(this.modules[i].getMotorAVolts(), -12, 12));
-			this.u_inputs.set(i * 2 + 1, 0, Util.clamp(this.modules[i].getMotorBVolts(), -12, 12));
+			this.u_inputs.set(i * 2 + 0, 0, SwerveUtils.clamp(this.modules[i].getMotorAVolts(), -12, 12));
+			this.u_inputs.set(i * 2 + 1, 0, SwerveUtils.clamp(this.modules[i].getMotorBVolts(), -12, 12));
 		}
 		// check that no ModuleSim's are null -- integration will be invalid if so
 		this.x_states = NumericalIntegration.rk4(
@@ -436,7 +436,7 @@ public class SwerveSimulator implements RecursiveSendable {
 				State.FramePositionA.from(this.y_outputs)
 			}, null);
 		b.addDoubleArrayProperty("Wheel Poses",
-			()->Util.toComponents3d( this.visualization.getWheelPoses3d( this.getWheelRotations() ) ), null);
+			()->SwerveUtils.toComponents3d( this.visualization.getWheelPoses3d( this.getWheelRotations() ) ), null);
 	}
 	@Override
 	public void initRecursive(SenderNT s, String key) {

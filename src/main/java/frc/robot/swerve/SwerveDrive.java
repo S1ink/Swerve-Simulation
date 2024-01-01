@@ -1,15 +1,14 @@
 package frc.robot.swerve;
 
 import edu.wpi.first.util.sendable.*;
+import edu.wpi.first.math.geometry.*;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.interfaces.Gyro;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Subsystem;
-import edu.wpi.first.math.geometry.*;
-import edu.wpi.first.math.kinematics.ChassisSpeeds;
 
 import frc.robot.swerve.SwerveUtils.*;
-import frc.robot.team3407.Util;
 
 
 /** A high-level swerve drive abstraction that allows driving and simulation of any possible {@link SwerveModule} implementation,
@@ -25,6 +24,7 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 
 	protected final SwerveModuleStates[] lock_states;
 	protected SwerveModuleStates[] states, targets;
+	protected AugmentationParams aug_params = new AugmentationParams(true);
 	private double prev_time, dt;
 
 	public final int SIZE;
@@ -73,11 +73,11 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 
 	@Override
 	public void initSendable(SendableBuilder b) {
-		b.addDoubleArrayProperty("Odometry Tracked Pose", ()->Util.toComponents2d(this.odometry.getPose()), null);
-		b.addDoubleArrayProperty("Odometry Pure Displacement", ()->Util.toComponents2d(this.odometry.getDisplacement()), null);
-		b.addDoubleArrayProperty("[S] Module Poses 3d", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.states)), null);
+		b.addDoubleArrayProperty("Odometry Tracked Pose", ()->SwerveUtils.toComponents2d(this.odometry.getPose()), null);
+		b.addDoubleArrayProperty("Odometry Pure Displacement", ()->SwerveUtils.toComponents2d(this.odometry.getDisplacement()), null);
+		b.addDoubleArrayProperty("[S] Module Poses 3d", ()->SwerveUtils.toComponents3d(this.visualization.getWheelPoses3d(this.states)), null);
 		b.addDoubleArrayProperty("[S] Wheel Vectors 2d", ()->SwerveVisualization.getVecComponents2d(this.states), null);
-		b.addDoubleArrayProperty("[T] Module Poses 3d", ()->Util.toComponents3d(this.visualization.getWheelPoses3d(this.targets)), null);
+		b.addDoubleArrayProperty("[T] Module Poses 3d", ()->SwerveUtils.toComponents3d(this.visualization.getWheelPoses3d(this.targets)), null);
 		b.addDoubleArrayProperty("[T] Wheel Vectors 2d", ()->SwerveVisualization.getVecComponents2d(this.targets), null);
 		b.addDoubleProperty("Update Period", ()->this.dt, null);
 	}
@@ -95,7 +95,12 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 	}
 
 
-// >> add struct containing post-process toggles and max velocity >>
+	/** Set the default parameters that specify which post-processing steps should be taken when applying new target states to the modules. */
+	public void applyParams(AugmentationParams params) {
+		this.aug_params = params;
+	}
+
+
 	/** Update the swerve's target state. Should be relative to the robot's coordinate frame. */
 	public void applyTarget(ChassisSpeeds target_state) {
 		this.applyTarget(new ChassisStates(target_state));
@@ -103,21 +108,29 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 	/** Update the swerve's target state. Should be relative to the robot's coordinate frame (field relative transform should be applied beforehand). */
 	public void applyTarget(ChassisStates target_state) {
 		this.targets = this.kinematics.toModuleStates(target_state, this.targets);	// targets is updated inline, although a new buffer is generated on size mismatches so reset anyway
-		// SwerveKinematics.normalizeModuleVelocities(MAX_VELOCITY, this.targets);	// need to figure out where MAX_VELOCITY belongs
-		for(int i = 0; i < this.SIZE; i++) {
-			SwerveModuleStates.optimize(
-				this.targets[i],
-				this.modules[i].getSteeringAngle(),
-				this.targets[i]
-			);
-			this.modules[i].setState(this.targets[i]);
-		}
+		this.applyStates(this.targets, this.aug_params);
 	}
 	/** Set the target state for a locking formation. */
 	public void applyLocked() {
 		for(int i = 0; i < this.SIZE; i++) {
-			this.targets[i] = this.lock_states[i];
-			this.modules[i].setState(this.lock_states[i]);
+			this.targets[i].copy( this.lock_states[i] );	// post processing may augment the targets so copy to ensure that lock states do not change
+		}
+		this.applyStates(this.targets, this.aug_params);
+	}
+	/** Post process the provides states according to the parameters and apply to the modules. For internal use only. */
+	protected void applyStates(SwerveModuleStates[] states, AugmentationParams params) {
+		if(params.should_normalize) {
+			SwerveKinematics.normalizeModuleVelocities(params.max_wheel_velocity, states);
+		}
+		for(int i = 0; i < this.SIZE; i++) {
+			if(params.should_optimize) {
+				SwerveModuleStates.optimize(
+					states[i],
+					this.modules[i].getSteeringAngle(),
+					states[i]
+				);
+			}
+			this.modules[i].setState(states[i]);
 		}
 	}
 	/** Call each module's stop function to disable all operation. */
@@ -165,6 +178,34 @@ public class SwerveDrive<Module_T extends SwerveModule> implements Subsystem, Se
 
 		public GenericSwerveDrive(Gyro gyro, SwerveModule... modules) {
 			super(gyro, modules);
+		}
+
+	}
+
+
+
+	/** AugmentationParams encapsulates parameters for if optimization and/or normalization
+	 * of module states should occur when applying a new target. */
+	public static class AugmentationParams {
+
+		final boolean
+			should_normalize,
+			should_optimize;
+		final double
+			max_wheel_velocity;
+
+		/** Default false for optimization and normalization. */
+		public AugmentationParams() { this(false); }
+		/** Set whether optimization should occur. Normalization is assumed false. */
+		public AugmentationParams(boolean s_opt) { this(s_opt, false, 0.0); }
+		/** Set a maximum velocity for normalization. Optimization is assumed false. */
+		public AugmentationParams(double max_wheel_velocity) { this(false, max_wheel_velocity != 0.0, max_wheel_velocity); }
+		/** Set whether optimization should occur and a maximum velocity for normalization. */
+		public AugmentationParams(boolean s_opt, double max_wheel_velocity) { this(s_opt, max_wheel_velocity != 0.0, max_wheel_velocity); }
+		private AugmentationParams(boolean s_opt, boolean s_norm, double mvel) {
+			this.should_normalize = s_norm;
+			this.should_optimize = s_opt;
+			this.max_wheel_velocity = mvel;
 		}
 
 	}
